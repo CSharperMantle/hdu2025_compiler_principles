@@ -1,0 +1,15 @@
+(lang dune 3.20)
+(name exp_2)
+
+(generate_opam_files true)
+
+(maintainers "CSharperMantle <webmaster@csmantle.top>")
+
+(package
+ (name exp_2)
+ (synopsis "Experiment 2")
+ (depends
+  (ocaml (= 5.2.1))
+  ocaml-lsp-server
+  ocamlformat
+  utop))
