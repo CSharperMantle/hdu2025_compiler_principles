@@ -2,5 +2,8 @@
     "ocaml.sandbox": {
         "kind": "opam",
         "switch": "${workspaceFolder:hdu2025_compiler_principles}"
-    }
+    },
+    "editor.rulers": [
+        100
+    ]
 }
