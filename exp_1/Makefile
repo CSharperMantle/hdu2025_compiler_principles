@@ -5,10 +5,10 @@ sample: sample.o
 	$(CC) -o $@ $^
 
 sample.o: sample.s
-	$(AS) -o $@ $^
+	$(AS) $(ASFLAGS) -o $@ $^
 
 sample.s: sample.i
-	$(CC) -S -o $@ $^
+	$(CC) -S $(CCFLAGS) -o $@ $^
 
 sample.i: sample.c
 	$(CPP) $(CPPFLAGS) -o $@ $^
@@ -16,11 +16,11 @@ sample.i: sample.c
 .PHONY: preprocess
 preprocess: sample.i
 
-.PHONY: assemble
-assemble: sample.s
-
 .PHONY: compile
-compile: sample.o
+compile: sample.s
+
+.PHONY: assemble
+assemble: sample.o
 
 .PHONY: link
 link: sample
