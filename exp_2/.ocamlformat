@@ -4,5 +4,4 @@ profile = conventional
 margin = 100
 if-then-else = compact
 type-decl = sparse
-nested-match = align
 break-cases = fit-or-vertical

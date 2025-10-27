@@ -50,3 +50,39 @@ let explicitize_concat (tokens : token list) : token list =
         else x :: aux (y :: rest)
   in
   aux tokens
+
+let shunting_yard (tokens : token list) : token list =
+  let precedence = function
+    | Star -> 4
+    | Plus -> 3
+    | Concat -> 2
+    | Pipe -> 1
+    | _ -> 0
+  in
+  let rec aux tokens output stack =
+    match tokens with
+    | [] -> List.rev_append output stack
+    | (Char _ as ch) :: rest -> aux rest (ch :: output) stack
+    | LParen :: rest -> aux rest output (LParen :: stack)
+    | RParen :: rest ->
+        let rec pop_until_lparen out ops =
+          match ops with
+          | [] -> (out, [])
+          | LParen :: ops_rest -> (out, ops_rest)
+          | ((Star | Plus | Pipe | Concat) as top) :: ops_rest ->
+              pop_until_lparen (top :: out) ops_rest
+          | _ -> failwith "Char in stack"
+        in
+        let output', stack' = pop_until_lparen output stack in
+        aux rest output' stack'
+    | ((Star | Plus | Pipe | Concat) as op) :: rest ->
+        let rec pop_ops out ops =
+          match ops with
+          | ((Star | Plus | Pipe | Concat) as top) :: ops_rest when precedence op <= precedence top
+            -> pop_ops (top :: out) ops_rest
+          | _ -> (out, ops)
+        in
+        let output', stack' = pop_ops output stack in
+        aux rest output' (op :: stack')
+  in
+  aux tokens [] []
