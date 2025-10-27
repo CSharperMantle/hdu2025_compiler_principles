@@ -186,7 +186,7 @@ let thompson (tokens : token list) : nfa =
             let frag, id' = expand_plus_fragment frag id in
             aux rest (frag :: stack') id'
         | _ -> failwith "invalid postfix expr")
-    | _ -> failwith "unimplemented"
+    | _ -> failwith "bad tokens in expr"
   in
   let final_frag, _ = aux tokens [] 0 in
   { q0 = final_frag.q0; qf = final_frag.qf; transitions = final_frag.transitions }
