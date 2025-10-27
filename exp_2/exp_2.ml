@@ -191,7 +191,7 @@ let thompson (tokens : token list) : nfa =
   let final_frag, _ = aux tokens [] 0 in
   { q0 = final_frag.q0; qf = final_frag.qf; transitions = final_frag.transitions }
 
-let eval_nfa nfa str : bool =
+let eval_nfa (nfa : nfa) (str : string) : bool =
   let epsilon_closure states =
     let rec aux visited = function
       | [] -> visited
@@ -220,3 +220,71 @@ let eval_nfa nfa str : bool =
       aux next_states (i + 1)
   in
   aux [ nfa.q0 ] 0
+
+type dfa = {
+  q0 : int;
+  qf : int list;
+  transitions : (int * char * int) list;
+}
+
+let nfa_to_dfa (nfa : nfa) : dfa =
+  let alphabet =
+    List.fold_left
+      (fun acc (_, symbol, _) ->
+        match symbol with
+        | Symbol c -> if List.mem c acc then acc else c :: acc
+        | Epsilon -> acc)
+      [] nfa.transitions
+  and epsilon_closure states =
+    let rec aux visited = function
+      | [] -> visited
+      | q :: rest ->
+          if List.mem q visited then aux visited rest
+          else
+            let states' =
+              List.filter_map
+                (fun (from, symbol, to_) -> if from = q && symbol = Epsilon then Some to_ else None)
+                nfa.transitions
+            in
+            aux (q :: visited) (states' @ rest)
+    in
+    aux [] states
+  and move states c =
+    List.filter_map
+      (fun (from, symbol, to_) ->
+        if List.mem from states && symbol = Symbol c then Some to_ else None)
+      nfa.transitions
+  and sort_states states = List.sort_uniq compare states in
+  let p0 = sort_states (epsilon_closure [ nfa.q0 ]) in
+  let rec aux pending visited transitions state_map id =
+    match pending with
+    | [] -> (visited, transitions, state_map)
+    | first :: rest ->
+        let first_id = List.assoc first state_map in
+        let pending', visited', transitions', state_map', id' =
+          (* For each character c in alphabet ... *)
+          List.fold_left
+            (fun (f_pend, f_vis, f_trans, f_sm, f_id) c ->
+              (* Have we seen its eps-closure(move(T, c)) already? *)
+              match sort_states (epsilon_closure (move first c)) with
+              | [] -> (f_pend, f_vis, f_trans, f_sm, f_id)
+              | s when List.mem_assoc s f_sm ->
+                  (* Yes! *)
+                  (f_pend, f_vis, (first_id, c, List.assoc s f_sm) :: f_trans, f_sm, f_id)
+              | s ->
+                  (* No. *)
+                  ( s :: f_pend,
+                    s :: f_vis,
+                    (first_id, c, f_id) :: f_trans,
+                    (s, f_id) :: f_sm,
+                    f_id + 1 ))
+            (rest, visited, transitions, state_map, id)
+            alphabet
+        in
+        aux pending' visited' transitions' state_map' id'
+  in
+  let _, transitions, state_map = aux [ p0 ] [] [] [ (p0, 0) ] 1 in
+  let qf =
+    List.filter_map (fun (states, id) -> if List.mem nfa.qf states then Some id else None) state_map
+  in
+  { q0 = 0; qf; transitions }
