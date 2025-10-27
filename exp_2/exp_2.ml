@@ -35,8 +35,13 @@ let tokenize (s : string) : token list =
   * a+b -> a+ ++ b
 *)
 let explicitize_concat (tokens : token list) : token list =
-  let needs_concat_after = function Char _ | Star | Plus | RParen -> true | _ -> false
-  and needs_concat_before = function Char _ | LParen -> true | _ -> false in
+  let needs_concat_after = function
+    | Char _ | Star | Plus | RParen -> true
+    | _ -> false
+  and needs_concat_before = function
+    | Char _ | LParen -> true
+    | _ -> false
+  in
   let rec aux = function
     | [] -> []
     | [ x ] -> [ x ]
