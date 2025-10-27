@@ -293,3 +293,72 @@ let nfa_to_dfa (nfa : nfa) : dfa =
     List.filter_map (fun (states, id) -> if List.mem nfa.qf states then Some id else None) state_map
   in
   { q0 = 0; qf; transitions }
+
+module IntSet = Set.Make (Int)
+
+(*
+  <https://swaminathanj.github.io/fsm/dfaminimization.html>
+  <https://en.wikipedia.org/wiki/DFA_minimization#Hopcroft%27s_algorithm>
+*)
+let hopcroft (dfa : dfa) =
+  let all_states =
+    List.sort_uniq compare (List.flatten (List.map (fun (s1, _, s2) -> [ s1; s2 ]) dfa.transitions))
+  and alphabet =
+    List.sort_uniq compare
+      (List.fold_left
+         (fun acc (_, c, _) -> if List.mem c acc then acc else c :: acc)
+         [] dfa.transitions)
+  and delta start c =
+    List.find_map
+      (fun (q1, ch, q2) -> if q1 = start && ch = c then Some q2 else None)
+      dfa.transitions
+  in
+  let split partition distinguisher c =
+    let in_set, out_set =
+      IntSet.partition
+        (fun s ->
+          match delta s c with
+          | Some t -> IntSet.mem t distinguisher
+          | None -> false)
+        partition
+    in
+    if IntSet.is_empty in_set || IntSet.is_empty out_set then [ partition ] else [ in_set; out_set ]
+  in
+  let rec aux partitions =
+    let refine parts =
+      let rec aux parts result changed =
+        match parts with
+        | [] -> (List.rev result, changed)
+        | part :: rest ->
+            let rec split_by_alphabet chars subparts changed =
+              match chars with
+              | [] -> (subparts, changed)
+              | c :: rest ->
+                  let subparts' =
+                    List.fold_left (fun acc p -> List.rev_append (split p part c) acc) [] subparts
+                  in
+                  split_by_alphabet rest subparts'
+                    (changed || List.length subparts' <> List.length subparts)
+            in
+            let subparts', changed' = split_by_alphabet alphabet [ part ] changed in
+            aux rest (List.rev_append subparts' result) changed'
+      in
+      aux parts [] false
+    in
+    let new_parts, changed = refine partitions in
+    if changed then aux new_parts else new_parts
+  in
+  let qnfs = IntSet.of_list (List.filter (fun s -> not (List.mem s dfa.qf)) all_states) in
+  let partitions = aux [ IntSet.of_list dfa.qf; qnfs ] in
+  let find_partition_id q =
+    Option.get (List.find_index (fun part -> IntSet.mem q part) partitions)
+  in
+  {
+    q0 = find_partition_id dfa.q0;
+    qf = List.sort_uniq compare (List.map find_partition_id dfa.qf);
+    transitions =
+      List.sort_uniq compare
+        (List.map
+           (fun (q1, c, q2) -> (find_partition_id q1, c, find_partition_id q2))
+           dfa.transitions);
+  }
