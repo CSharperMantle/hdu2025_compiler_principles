@@ -239,6 +239,7 @@ let nfa_to_dfa (nfa : nfa) : dfa =
         | Symbol c -> if List.mem c acc then acc else c :: acc
         | Epsilon -> acc)
       [] nfa.transitions
+    |> List.sort_uniq compare
   and epsilon_closure states =
     let rec aux visited = function
       | [] -> visited
