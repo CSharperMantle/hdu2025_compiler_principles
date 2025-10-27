@@ -226,7 +226,10 @@ type dfa = {
   qf : int list;
   transitions : (int * char * int) list;
 }
-
+(*
+  雨课堂PPT《9.30 词法分析2-自动机》
+  <https://en.wikipedia.org/wiki/Powerset_construction>
+*)
 let nfa_to_dfa (nfa : nfa) : dfa =
   let alphabet =
     List.fold_left
