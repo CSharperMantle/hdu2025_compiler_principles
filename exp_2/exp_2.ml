@@ -51,6 +51,9 @@ let explicitize_concat (tokens : token list) : token list =
   in
   aux tokens
 
+(*
+  <https://mathcenter.oxford.emory.edu/site/cs171/shuntingYardAlgorithm/>
+*)
 let shunting_yard (tokens : token list) : token list =
   let precedence = function
     | Star -> 4
@@ -86,3 +89,5 @@ let shunting_yard (tokens : token list) : token list =
         aux rest output' (op :: stack')
   in
   aux tokens [] []
+
+
