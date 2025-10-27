@@ -90,4 +90,103 @@ let shunting_yard (tokens : token list) : token list =
   in
   aux tokens [] []
 
+type nfa_symbol =
+  | Epsilon
+  | Symbol of char
 
+type nfa = {
+  q0 : int;
+  qf : int;
+  transitions : (int * nfa_symbol * int) list;
+}
+
+(*
+  <http://www.csci.viu.ca/~wesselsd/courses/csci439/slides/thompsons.pdf>
+  <https://en.wikipedia.org/wiki/Thompson%27s_construction>
+*)
+let thompson (tokens : token list) : nfa =
+  let alloc_node id = (id, id + 1) in
+  let create_char_fragment c id =
+    let s1, id' = alloc_node id in
+    let s2, id'' = alloc_node id' in
+    ({ q0 = s1; qf = s2; transitions = [ (s1, Symbol c, s2) ] }, id'')
+  and create_concat_fragment frag1 frag2 =
+    {
+      q0 = frag1.q0;
+      qf = frag2.qf;
+      transitions = [ (frag1.qf, Epsilon, frag2.q0) ] @ frag1.transitions @ frag2.transitions;
+    }
+  and create_alt_fragment frag1 frag2 id =
+    let s1, id' = alloc_node id in
+    let s2, id'' = alloc_node id' in
+    ( {
+        q0 = s1;
+        qf = s2;
+        transitions =
+          [
+            (s1, Epsilon, frag1.q0);
+            (s1, Epsilon, frag2.q0);
+            (frag1.qf, Epsilon, s2);
+            (frag2.qf, Epsilon, s2);
+          ]
+          @ frag1.transitions @ frag2.transitions;
+      },
+      id'' )
+  and create_star_fragment frag id =
+    let s1, id' = alloc_node id in
+    let s2, id'' = alloc_node id' in
+    ( {
+        q0 = s1;
+        qf = s2;
+        transitions =
+          [
+            (s1, Epsilon, frag.q0);
+            (s1, Epsilon, s2);
+            (frag.qf, Epsilon, frag.q0);
+            (frag.qf, Epsilon, s2);
+          ]
+          @ frag.transitions;
+      },
+      id'' )
+  in
+  let expand_plus_fragment frag id =
+    let star, id' = create_star_fragment frag id in
+    (create_concat_fragment frag star, id')
+  in
+  let rec aux tokens stack id =
+    match tokens with
+    | [] -> (
+        match stack with
+        | [ frag ] -> (frag, id)
+        | _ -> failwith "invalid postfix expr")
+    | Char c :: rest ->
+        let frag, id' = create_char_fragment c id in
+        aux rest (frag :: stack) id'
+    | Concat :: rest -> (
+        match stack with
+        | frag2 :: frag1 :: stack' ->
+            let frag = create_concat_fragment frag1 frag2 in
+            aux rest (frag :: stack') id
+        | _ -> failwith "invalid postfix expr")
+    | Pipe :: rest -> (
+        match stack with
+        | frag2 :: frag1 :: stack' ->
+            let frag, id' = create_alt_fragment frag1 frag2 id in
+            aux rest (frag :: stack') id'
+        | _ -> failwith "invalid postfix expr")
+    | Star :: rest -> (
+        match stack with
+        | frag :: stack' ->
+            let frag, id' = create_star_fragment frag id in
+            aux rest (frag :: stack') id'
+        | _ -> failwith "invalid postfix expr")
+    | Plus :: rest -> (
+        match stack with
+        | frag :: stack' ->
+            let frag, id' = expand_plus_fragment frag id in
+            aux rest (frag :: stack') id'
+        | _ -> failwith "invalid postfix expr")
+    | _ -> failwith "unimplemented"
+  in
+  let final_frag, _ = aux tokens [] 0 in
+  { q0 = final_frag.q0; qf = final_frag.qf; transitions = final_frag.transitions }
