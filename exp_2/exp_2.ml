@@ -233,13 +233,13 @@ type dfa = {
 *)
 let nfa_to_dfa (nfa : nfa) : dfa =
   let alphabet =
-    List.fold_left
-      (fun acc (_, symbol, _) ->
-        match symbol with
-        | Symbol c -> if List.mem c acc then acc else c :: acc
-        | Epsilon -> acc)
-      [] nfa.transitions
-    |> List.sort_uniq compare
+    List.sort_uniq compare
+      (List.fold_left
+         (fun acc (_, symbol, _) ->
+           match symbol with
+           | Symbol c -> if List.mem c acc then acc else c :: acc
+           | Epsilon -> acc)
+         [] nfa.transitions)
   and epsilon_closure states =
     let rec aux visited = function
       | [] -> visited
