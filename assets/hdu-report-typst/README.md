@@ -1,3 +1,5 @@
+> Imported as a subtree from <https://github.com/woshiluo/hdu-report-typst>.
+
 # HDU-Report-Typst
 
 杭州电子科技大学的报告模板

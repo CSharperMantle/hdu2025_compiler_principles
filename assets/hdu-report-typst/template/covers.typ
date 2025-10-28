@@ -72,8 +72,9 @@
     (authors + author_id,)
   }
 
-  align(left)[
-    #image("assets/hdu.png", width: 60%)
+  set page("a4", numbering: none)
+  align(center)[
+    #image("assets/hdu-icon.png", width: 60%)
   ]
   align(center + horizon)[
     #pad(top: -15pt, text(title, size: 32pt, weight: 550, fill: hdu_blue, font: font_style.songti))\
@@ -88,6 +89,9 @@
         ..authors_listing,
       ),
     )
+  ]
+  align(center + bottom)[
+    #date_format(date)
   ]
   pagebreak()
 }

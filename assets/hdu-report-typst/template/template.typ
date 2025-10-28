@@ -15,7 +15,7 @@
   department: "计算机科学与技术学院",
   authors: ("author1", "author2"),
   author_id: ("20010001", "20010002"),
-  date: (2023, 5, 14),
+  date: datetime.today,
   cover_style: "normal",
   body,
 ) = {
