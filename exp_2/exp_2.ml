@@ -211,8 +211,7 @@ let eval_nfa (nfa : nfa) (str : string) : bool =
     aux [] states
   and move states c =
     List.filter_map
-      (fun (from, symbol, to_) ->
-        if List.mem from states && symbol = Symbol c then Some to_ else None)
+      (fun (q1, sym, q2) -> if List.mem q1 states && sym = Symbol c then Some q2 else None)
       nfa.transitions
   in
   let rec aux current i =
@@ -235,8 +234,8 @@ let nfa_to_dfa (nfa : nfa) : dfa =
   let alphabet =
     CharSet.of_list
       (List.filter_map
-         (fun (_, symbol, _) ->
-           match symbol with
+         (fun (_, sym, _) ->
+           match sym with
            | Symbol c -> Some c
            | Epsilon -> None)
          nfa.transitions)
@@ -248,7 +247,7 @@ let nfa_to_dfa (nfa : nfa) : dfa =
           else
             let states' =
               List.filter_map
-                (fun (from, symbol, to_) -> if from = q && symbol = Epsilon then Some to_ else None)
+                (fun (q1, sym, q2) -> if q1 = q && sym = Epsilon then Some q2 else None)
                 nfa.transitions
             in
             aux (q :: visited) (states' @ rest)
@@ -256,8 +255,7 @@ let nfa_to_dfa (nfa : nfa) : dfa =
     aux [] states
   and move states c =
     List.filter_map
-      (fun (from, symbol, to_) ->
-        if IntSet.mem from states && symbol = Symbol c then Some to_ else None)
+      (fun (q1, sym, q2) -> if IntSet.mem q1 states && sym = Symbol c then Some q2 else None)
       nfa.transitions
   in
   let p0 = epsilon_closure [ nfa.q0 ] in
@@ -302,7 +300,7 @@ let nfa_to_dfa (nfa : nfa) : dfa =
   <https://swaminathanj.github.io/fsm/dfaminimization.html>
   <https://en.wikipedia.org/wiki/DFA_minimization#Hopcroft%27s_algorithm>
 *)
-let hopcroft (dfa : dfa) =
+let hopcroft (dfa : dfa) : dfa =
   let all_states =
     IntSet.of_list (List.flatten (List.map (fun (s1, _, s2) -> [ s1; s2 ]) dfa.transitions))
   and alphabet = CharSet.of_list (List.map (fun (_, c, _) -> c) dfa.transitions)
@@ -361,3 +359,53 @@ let hopcroft (dfa : dfa) =
            (fun (q1, c, q2) -> (find_partition_id q1, c, find_partition_id q2))
            dfa.transitions);
   }
+
+let eval_dfa (dfa : dfa) (str : string) : bool =
+  let delta q c =
+    List.find_map (fun (q1, ch, q2) -> if q1 = q && ch = c then Some q2 else None) dfa.transitions
+  in
+  let rec aux state i =
+    if i >= String.length str then List.mem state dfa.qf
+    else
+      match delta state str.[i] with
+      | Some state' -> aux state' (i + 1)
+      | None -> false
+  in
+  aux dfa.q0 0
+
+let print_dfa (dfa : dfa) : unit =
+  Printf.printf "{ q0 = %d; qf = [" dfa.q0;
+  List.iteri
+    (fun i qf ->
+      if i > 0 then Printf.printf "; ";
+      Printf.printf "%d" qf)
+    dfa.qf;
+  Printf.printf "];\n  transitions = [\n";
+  List.iteri
+    (fun i (q1, c, q2) ->
+      if i > 0 then Printf.printf ";\n";
+      Printf.printf "    (%d, '%c', %d)" q1 c q2)
+    dfa.transitions;
+  Printf.printf "\n  ]\n}\n"
+
+let () =
+  Printf.printf "Regex?> ";
+  flush stdout;
+  let regex = read_line () in
+  try
+    let min_dfa =
+      regex |> tokenize |> explicitize_concat |> shunting_yard |> thompson |> nfa_to_dfa |> hopcroft
+    in
+    Printf.printf "min-DFA:\n";
+    print_dfa min_dfa;
+    while true do
+      Printf.printf "Test string?> ";
+      flush stdout;
+      let test_str = read_line () in
+      if String.trim test_str = "" then exit 0;
+      let result = eval_dfa min_dfa test_str in
+      Printf.printf "Result: %b\n" result
+    done
+  with
+  | Failure msg -> Printf.eprintf "Error: %s\n" msg
+  | e -> Printf.eprintf "Unexpected error: %s\n" (Printexc.to_string e)
