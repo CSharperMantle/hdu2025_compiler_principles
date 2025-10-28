@@ -1,3 +1,6 @@
+module IntSet = Set.Make (Int)
+module CharSet = Set.Make (Char)
+
 type token =
   | Char of char
   | Star
@@ -214,10 +217,7 @@ let eval_nfa (nfa : nfa) (str : string) : bool =
   in
   let rec aux current i =
     if i >= String.length str then List.mem nfa.qf (epsilon_closure current)
-    else
-      let c = str.[i] in
-      let next_states = move (epsilon_closure current) c in
-      aux next_states (i + 1)
+    else aux (move (epsilon_closure current) str.[i]) (i + 1)
   in
   aux [ nfa.q0 ] 0
 
@@ -233,16 +233,16 @@ type dfa = {
 *)
 let nfa_to_dfa (nfa : nfa) : dfa =
   let alphabet =
-    List.sort_uniq compare
-      (List.fold_left
-         (fun acc (_, symbol, _) ->
+    CharSet.of_list
+      (List.filter_map
+         (fun (_, symbol, _) ->
            match symbol with
-           | Symbol c -> if List.mem c acc then acc else c :: acc
-           | Epsilon -> acc)
-         [] nfa.transitions)
+           | Symbol c -> Some c
+           | Epsilon -> None)
+         nfa.transitions)
   and epsilon_closure states =
     let rec aux visited = function
-      | [] -> visited
+      | [] -> IntSet.of_list visited
       | q :: rest ->
           if List.mem q visited then aux visited rest
           else
@@ -257,10 +257,10 @@ let nfa_to_dfa (nfa : nfa) : dfa =
   and move states c =
     List.filter_map
       (fun (from, symbol, to_) ->
-        if List.mem from states && symbol = Symbol c then Some to_ else None)
+        if IntSet.mem from states && symbol = Symbol c then Some to_ else None)
       nfa.transitions
-  and sort_states states = List.sort_uniq compare states in
-  let p0 = sort_states (epsilon_closure [ nfa.q0 ]) in
+  in
+  let p0 = epsilon_closure [ nfa.q0 ] in
   let rec aux pending visited transitions state_map id =
     match pending with
     | [] -> (visited, transitions, state_map)
@@ -268,33 +268,35 @@ let nfa_to_dfa (nfa : nfa) : dfa =
         let first_id = List.assoc first state_map in
         let pending', visited', transitions', state_map', id' =
           (* For each character c in alphabet ... *)
-          List.fold_left
-            (fun (f_pend, f_vis, f_trans, f_sm, f_id) c ->
+          CharSet.fold
+            (fun c (f_pend, f_vis, f_trans, f_sm, f_id) ->
+              let s = epsilon_closure (move first c) in
               (* Have we seen its eps-closure(move(T, c)) already? *)
-              match sort_states (epsilon_closure (move first c)) with
-              | [] -> (f_pend, f_vis, f_trans, f_sm, f_id)
-              | s when List.mem_assoc s f_sm ->
-                  (* Yes! *)
-                  (f_pend, f_vis, (first_id, c, List.assoc s f_sm) :: f_trans, f_sm, f_id)
-              | s ->
-                  (* No. *)
-                  ( s :: f_pend,
-                    s :: f_vis,
-                    (first_id, c, f_id) :: f_trans,
-                    (s, f_id) :: f_sm,
-                    f_id + 1 ))
-            (rest, visited, transitions, state_map, id)
+              match IntSet.cardinal s with
+              | 0 -> (f_pend, f_vis, f_trans, f_sm, f_id)
+              | _ ->
+                  if List.mem_assoc s f_sm then
+                    (* Yes! *)
+                    (f_pend, f_vis, (first_id, c, List.assoc s f_sm) :: f_trans, f_sm, f_id)
+                  else
+                    (* No... *)
+                    ( s :: f_pend,
+                      s :: f_vis,
+                      (first_id, c, f_id) :: f_trans,
+                      (s, f_id) :: f_sm,
+                      f_id + 1 ))
             alphabet
+            (rest, visited, transitions, state_map, id)
         in
         aux pending' visited' transitions' state_map' id'
   in
   let _, transitions, state_map = aux [ p0 ] [] [] [ (p0, 0) ] 1 in
   let qf =
-    List.filter_map (fun (states, id) -> if List.mem nfa.qf states then Some id else None) state_map
+    List.filter_map
+      (fun (states, id) -> if IntSet.mem nfa.qf states then Some id else None)
+      state_map
   in
   { q0 = 0; qf; transitions }
-
-module IntSet = Set.Make (Int)
 
 (*
   <https://swaminathanj.github.io/fsm/dfaminimization.html>
@@ -302,12 +304,8 @@ module IntSet = Set.Make (Int)
 *)
 let hopcroft (dfa : dfa) =
   let all_states =
-    List.sort_uniq compare (List.flatten (List.map (fun (s1, _, s2) -> [ s1; s2 ]) dfa.transitions))
-  and alphabet =
-    List.sort_uniq compare
-      (List.fold_left
-         (fun acc (_, c, _) -> if List.mem c acc then acc else c :: acc)
-         [] dfa.transitions)
+    IntSet.of_list (List.flatten (List.map (fun (s1, _, s2) -> [ s1; s2 ]) dfa.transitions))
+  and alphabet = CharSet.of_list (List.map (fun (_, c, _) -> c) dfa.transitions)
   and delta start c =
     List.find_map
       (fun (q1, ch, q2) -> if q1 = start && ch = c then Some q2 else None)
@@ -330,17 +328,18 @@ let hopcroft (dfa : dfa) =
         match parts with
         | [] -> (List.rev result, changed)
         | part :: rest ->
-            let rec split_by_alphabet chars subparts changed =
-              match chars with
-              | [] -> (subparts, changed)
-              | c :: rest ->
+            let rec split_by_char alphas subparts changed =
+              match CharSet.cardinal alphas with
+              | 0 -> (subparts, changed)
+              | _ ->
+                  let c = CharSet.choose alphas in
                   let subparts' =
                     List.fold_left (fun acc p -> List.rev_append (split p part c) acc) [] subparts
                   in
-                  split_by_alphabet rest subparts'
+                  split_by_char (CharSet.remove c alphas) subparts'
                     (changed || List.length subparts' <> List.length subparts)
             in
-            let subparts', changed' = split_by_alphabet alphabet [ part ] changed in
+            let subparts', changed' = split_by_char alphabet [ part ] changed in
             aux rest (List.rev_append subparts' result) changed'
       in
       aux parts [] false
@@ -348,8 +347,8 @@ let hopcroft (dfa : dfa) =
     let new_parts, changed = refine partitions in
     if changed then aux new_parts else new_parts
   in
-  let qnfs = IntSet.of_list (List.filter (fun s -> not (List.mem s dfa.qf)) all_states) in
-  let partitions = aux [ IntSet.of_list dfa.qf; qnfs ] in
+  let qfs = IntSet.of_list dfa.qf in
+  let partitions = aux [ qfs; IntSet.diff all_states qfs ] in
   let find_partition_id q =
     Option.get (List.find_index (fun part -> IntSet.mem q part) partitions)
   in
