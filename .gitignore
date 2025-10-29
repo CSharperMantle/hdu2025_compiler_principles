@@ -2,6 +2,8 @@ exp_1/sample
 exp_1/sample.*
 !exp_1/sample.c
 *.pdf
+**/a/
+**/b/
 
 # Created by https://www.toptal.com/developers/gitignore/api/ocaml,c,flex,visualstudiocode
 # Edit at https://www.toptal.com/developers/gitignore?templates=ocaml,c,flex,visualstudiocode

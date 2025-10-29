@@ -5,10 +5,10 @@
 #endif
 int main()
 {
-   int a = M;
-   if (a)
+    int a = M;
+    if (a)
        a = a + 4;
-   else
+    else
        a = a * 4;
-   return 0;
+    return 0;
 }
