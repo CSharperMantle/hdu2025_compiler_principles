@@ -211,13 +211,13 @@ let thompson (tokens : token list) : nfa =
 let eval_nfa (nfa : nfa) (str : string) : bool =
   let epsilon_closure states =
     let rec aux visited = function
-      | [] -> visited
+      | [] -> IntSet.of_list visited
       | q :: rest ->
           if List.mem q visited then aux visited rest
           else
             let states' =
               List.filter_map
-                (fun (from, symbol, to_) -> if from = q && symbol = Epsilon then Some to_ else None)
+                (fun (q1, sym, q2) -> if q1 = q && sym = Epsilon then Some q2 else None)
                 nfa.transitions
             in
             aux (q :: visited) (states' @ rest)
@@ -225,11 +225,11 @@ let eval_nfa (nfa : nfa) (str : string) : bool =
     aux [] states
   and move states c =
     List.filter_map
-      (fun (q1, sym, q2) -> if List.mem q1 states && sym = Symbol c then Some q2 else None)
+      (fun (q1, sym, q2) -> if IntSet.mem q1 states && sym = Symbol c then Some q2 else None)
       nfa.transitions
   in
   let rec aux current i =
-    if i >= String.length str then List.mem nfa.qf (epsilon_closure current)
+    if i >= String.length str then IntSet.mem nfa.qf (epsilon_closure current)
     else aux (move (epsilon_closure current) str.[i]) (i + 1)
   in
   aux [ nfa.q0 ] 0
