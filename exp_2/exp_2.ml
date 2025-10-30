@@ -64,7 +64,8 @@ let explicitize_concat (tokens : raw_token list) : token list =
     | [] -> []
     | [ x ] -> [ raw_to_token x ]
     | x :: y :: rest ->
-        if needs_concat_after x && needs_concat_before y then raw_to_token x :: Concat :: aux (y :: rest)
+        if needs_concat_after x && needs_concat_before y then
+          raw_to_token x :: Concat :: aux (y :: rest)
         else raw_to_token x :: aux (y :: rest)
   in
   aux tokens
@@ -80,11 +81,10 @@ let shunting_yard (tokens : token list) : token list =
     | Pipe -> 1
     | _ -> 0
   in
-  let rec aux tokens output stack =
-    match tokens with
+  let rec aux output stack = function
     | [] -> List.rev_append output stack
-    | (Char _ as ch) :: rest -> aux rest (ch :: output) stack
-    | LParen :: rest -> aux rest output (LParen :: stack)
+    | (Char _ as ch) :: rest -> aux (ch :: output) stack rest
+    | LParen :: rest -> aux output (LParen :: stack) rest
     | RParen :: rest ->
         let rec pop_until_lparen out ops =
           match ops with
@@ -95,7 +95,7 @@ let shunting_yard (tokens : token list) : token list =
           | _ -> failwith "Char in stack"
         in
         let output', stack' = pop_until_lparen output stack in
-        aux rest output' stack'
+        aux output' stack' rest
     | ((Star | Plus | Pipe | Concat) as op) :: rest ->
         let rec pop_ops out ops =
           match ops with
@@ -104,9 +104,9 @@ let shunting_yard (tokens : token list) : token list =
           | _ -> (out, ops)
         in
         let output', stack' = pop_ops output stack in
-        aux rest output' (op :: stack')
+        aux output' (op :: stack') rest
   in
-  aux tokens [] []
+  aux [] [] tokens
 
 type nfa_symbol =
   | Epsilon
@@ -171,42 +171,41 @@ let thompson (tokens : token list) : nfa =
     let star, id' = create_star_fragment frag id in
     (create_concat_fragment frag star, id')
   in
-  let rec aux tokens stack id =
-    match tokens with
+  let rec aux stack id = function
     | [] -> (
         match stack with
         | [ frag ] -> (frag, id)
         | _ -> failwith "invalid postfix expr")
     | Char c :: rest ->
         let frag, id' = create_char_fragment c id in
-        aux rest (frag :: stack) id'
+        aux (frag :: stack) id' rest
     | Concat :: rest -> (
         match stack with
         | frag2 :: frag1 :: stack' ->
             let frag = create_concat_fragment frag1 frag2 in
-            aux rest (frag :: stack') id
+            aux (frag :: stack') id rest
         | _ -> failwith "invalid postfix expr")
     | Pipe :: rest -> (
         match stack with
         | frag2 :: frag1 :: stack' ->
             let frag, id' = create_alt_fragment frag1 frag2 id in
-            aux rest (frag :: stack') id'
+            aux (frag :: stack') id' rest
         | _ -> failwith "invalid postfix expr")
     | Star :: rest -> (
         match stack with
         | frag :: stack' ->
             let frag, id' = create_star_fragment frag id in
-            aux rest (frag :: stack') id'
+            aux (frag :: stack') id' rest
         | _ -> failwith "invalid postfix expr")
     | Plus :: rest -> (
         match stack with
         | frag :: stack' ->
             let frag, id' = expand_plus_fragment frag id in
-            aux rest (frag :: stack') id'
+            aux (frag :: stack') id' rest
         | _ -> failwith "invalid postfix expr")
     | _ -> failwith "bad tokens in expr"
   in
-  let final_frag, _ = aux tokens [] 0 in
+  let final_frag, _ = aux [] 0 tokens in
   { q0 = final_frag.q0; qf = final_frag.qf; transitions = final_frag.transitions }
 
 let eval_nfa (nfa : nfa) (str : string) : bool =
@@ -274,8 +273,7 @@ let nfa_to_dfa (nfa : nfa) : dfa =
       nfa.transitions
   in
   let p0 = epsilon_closure [ nfa.q0 ] in
-  let rec aux pending visited transitions state_map id =
-    match pending with
+  let rec aux visited transitions state_map id = function
     | [] -> (visited, transitions, state_map)
     | first :: rest ->
         let first_id = List.assoc first state_map in
@@ -301,9 +299,9 @@ let nfa_to_dfa (nfa : nfa) : dfa =
             alphabet
             (rest, visited, transitions, state_map, id)
         in
-        aux pending' visited' transitions' state_map' id'
+        aux visited' transitions' state_map' id' pending'
   in
-  let _, transitions, state_map = aux [ p0 ] [] [] [ (p0, 0) ] 1 in
+  let _, transitions, state_map = aux [] [] [ (p0, 0) ] 1 [ p0 ] in
   let qf =
     List.filter_map
       (fun (states, id) -> if IntSet.mem nfa.qf states then Some id else None)
@@ -337,8 +335,7 @@ let hopcroft (dfa : dfa) : dfa =
   in
   let rec aux partitions =
     let refine parts =
-      let rec aux parts result changed =
-        match parts with
+      let rec aux result changed = function
         | [] -> (List.rev result, changed)
         | part :: rest ->
             let rec split_by_char alphas subparts changed =
@@ -353,9 +350,9 @@ let hopcroft (dfa : dfa) : dfa =
                     (changed || List.length subparts' <> List.length subparts)
             in
             let subparts', changed' = split_by_char alphabet [ part ] changed in
-            aux rest (List.rev_append subparts' result) changed'
+            aux (List.rev_append subparts' result) changed' rest
       in
-      aux parts [] false
+      aux [] false parts
     in
     let new_parts, changed = refine partitions in
     if changed then aux new_parts else new_parts
