@@ -1,6 +1,6 @@
 #let font_style = (
   heiti: ("Noto Sans CJK SC", "Source Han Sans"),
-  songti: ("Noto Serif CJK SC", "Source Han Serif"),
+  songti: ("Noto Serif CJK SC", "Source Han Serif", "STZhongsong"),
   kaiti: ("STKaiti", "LXGW WenKai"),
 );
 

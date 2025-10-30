@@ -128,7 +128,7 @@
   figure(
     equation,
     caption: caption,
-    supplement: [公式],
+    supplement: [式],
     numbering: equation_num,
     kind: "equation",
   )
