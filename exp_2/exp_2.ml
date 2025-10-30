@@ -45,7 +45,7 @@ type token =
   * a*b -> a* ++ b
   * a+b -> a+ ++ b
 *)
-let explicitize_concat (tokens : raw_token list) : token list =
+let cook_tokens (tokens : raw_token list) : token list =
   let needs_concat_after = function
     | RawChar _ | RawStar | RawPlus | RawRParen -> true
     | _ -> false
@@ -406,7 +406,7 @@ let () =
   let regex = read_line () in
   try
     let min_dfa =
-      regex |> tokenize |> explicitize_concat |> shunting_yard |> thompson |> nfa_to_dfa |> hopcroft
+      regex |> tokenize |> cook_tokens |> shunting_yard |> thompson |> nfa_to_dfa |> hopcroft
     in
     Printf.printf "min-DFA:\n";
     print_dfa min_dfa;
