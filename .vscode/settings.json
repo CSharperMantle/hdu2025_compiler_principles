@@ -5,5 +5,10 @@
     },
     "editor.rulers": [
         100
+    ],
+    "cSpell.words": [
+        "eprintf",
+        "failwith",
+        "Printexc"
     ]
 }

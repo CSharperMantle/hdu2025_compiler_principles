@@ -1,6 +1,32 @@
 module IntSet = Set.Make (Int)
 module CharSet = Set.Make (Char)
 
+type raw_token =
+  | RawChar of char
+  | RawStar
+  | RawPlus
+  | RawPipe
+  | RawLParen
+  | RawRParen
+
+let tokenize (s : string) : raw_token list =
+  let len = String.length s in
+  let rec aux i acc =
+    if i >= String.length s then List.rev acc
+    else
+      match s.[i] with
+      | '*' -> aux (i + 1) (RawStar :: acc)
+      | '+' -> aux (i + 1) (RawPlus :: acc)
+      | '|' -> aux (i + 1) (RawPipe :: acc)
+      | '(' -> aux (i + 1) (RawLParen :: acc)
+      | ')' -> aux (i + 1) (RawRParen :: acc)
+      | '\\' ->
+          if i + 1 < len then aux (i + 2) (RawChar s.[i + 1] :: acc)
+          else failwith "unterminated escape sequence"
+      | c -> aux (i + 1) (RawChar c :: acc)
+  in
+  aux 0 []
+
 type token =
   | Char of char
   | Star
@@ -8,25 +34,7 @@ type token =
   | Pipe
   | LParen
   | RParen
-  | Concat (* implicit *)
-
-let tokenize (s : string) : token list =
-  let len = String.length s in
-  let rec aux i acc =
-    if i >= String.length s then List.rev acc
-    else
-      match s.[i] with
-      | '*' -> aux (i + 1) (Star :: acc)
-      | '+' -> aux (i + 1) (Plus :: acc)
-      | '|' -> aux (i + 1) (Pipe :: acc)
-      | '(' -> aux (i + 1) (LParen :: acc)
-      | ')' -> aux (i + 1) (RParen :: acc)
-      | '\\' ->
-          if i + 1 < len then aux (i + 2) (Char s.[i + 1] :: acc)
-          else failwith "unterminated escape sequence"
-      | c -> aux (i + 1) (Char c :: acc)
-  in
-  aux 0 []
+  | Concat
 
 (*
   Inserts concat token.
@@ -37,20 +45,27 @@ let tokenize (s : string) : token list =
   * a*b -> a* ++ b
   * a+b -> a+ ++ b
 *)
-let explicitize_concat (tokens : token list) : token list =
+let explicitize_concat (tokens : raw_token list) : token list =
   let needs_concat_after = function
-    | Char _ | Star | Plus | RParen -> true
+    | RawChar _ | RawStar | RawPlus | RawRParen -> true
     | _ -> false
   and needs_concat_before = function
-    | Char _ | LParen -> true
+    | RawChar _ | RawLParen -> true
     | _ -> false
+  and raw_to_token = function
+    | RawChar c -> Char c
+    | RawStar -> Star
+    | RawPlus -> Plus
+    | RawPipe -> Pipe
+    | RawLParen -> LParen
+    | RawRParen -> RParen
   in
   let rec aux = function
     | [] -> []
-    | [ x ] -> [ x ]
+    | [ x ] -> [ raw_to_token x ]
     | x :: y :: rest ->
-        if needs_concat_after x && needs_concat_before y then x :: Concat :: aux (y :: rest)
-        else x :: aux (y :: rest)
+        if needs_concat_after x && needs_concat_before y then raw_to_token x :: Concat :: aux (y :: rest)
+        else raw_to_token x :: aux (y :: rest)
   in
   aux tokens
 
