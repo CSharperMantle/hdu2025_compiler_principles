@@ -15,3 +15,4 @@ dune:
 .PHONY: clean
 clean:
 	rm -f exp_2 exp_2.cm* exp_2.o
+	dune clean
