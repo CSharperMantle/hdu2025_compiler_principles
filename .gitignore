@@ -1,6 +1,10 @@
 exp_1/sample
 exp_1/sample.*
 !exp_1/sample.c
+exp_2/exp_2
+exp_2/exp_2.*
+!exp_2/exp_2.ml
+!exp_2/exp_2.opam
 *.pdf
 **/a/
 **/b/
