@@ -16,7 +16,7 @@
   department: "卓越学院",
   authors: "鲍溶",
   author_id: "23060827",
-  date: datetime.today(),
+  date: datetime(year: 2025, month: 11, day: 1),
   cover_style: "hdu_report",
 )
 
