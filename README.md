@@ -14,5 +14,5 @@ WIP.
   * [x] 正规表达式转NFA实现
   * [x] NFA转DFA算法实现
   * [x] DFA最小化算法及实现
-  * [ ] 报告（[report.typ](exp_2/report.typ)）
+  * [x] 报告（[report.typ](exp_2/report.typ)）
 * TBA.
