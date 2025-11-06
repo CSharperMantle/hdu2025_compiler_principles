@@ -7,8 +7,15 @@
         100
     ],
     "cSpell.words": [
+        "distinguisher",
+        "elim",
         "eprintf",
         "failwith",
+        "hopcroft",
+        "indir",
+        "lparen",
+        "nonterminal",
+        "nonterminals",
         "Printexc"
     ]
 }
