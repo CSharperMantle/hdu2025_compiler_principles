@@ -282,10 +282,10 @@ let nfa_to_dfa (nfa : nfa) : dfa =
           CharSet.fold
             (fun c (f_pend, f_vis, f_trans, f_sm, f_id) ->
               let s = epsilon_closure (move first c) in
-              (* Have we seen its eps-closure(move(T, c)) already? *)
               match IntSet.cardinal s with
               | 0 -> (f_pend, f_vis, f_trans, f_sm, f_id)
               | _ ->
+                  (* Have we seen its eps-closure(move(T, c)) already? *)
                   if List.mem_assoc s f_sm then
                     (* Yes! *)
                     (f_pend, f_vis, (first_id, c, List.assoc s f_sm) :: f_trans, f_sm, f_id)
