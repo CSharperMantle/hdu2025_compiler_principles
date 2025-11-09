@@ -2,15 +2,32 @@ type symbol =
   | Terminal of string
   | NonTerminal of int
 
-(* A context-free production rule. *)
+(* A context-free production rule. rhs = [] means ε. *)
 type production = {
   lhs : int;
   rhs : symbol list;
 }
 
+(*
+  ASSUMPTION:
+    The first rule's LHS is the starting symbol.
+*)
 type grammar = production list
 
-(* Example grammar from Example 4.10. *)
+(* Example grammar from Example 4-6 for FIRST() and SELECT(). *)
+let grammar_example_4_6 =
+  [
+    { lhs = 1; rhs = [ NonTerminal 3; NonTerminal 2 ] };
+    { lhs = 2; rhs = [ Terminal "+"; NonTerminal 3; NonTerminal 2 ] };
+    { lhs = 2; rhs = [] };
+    { lhs = 3; rhs = [ NonTerminal 5; NonTerminal 4 ] };
+    { lhs = 4; rhs = [ Terminal "*"; NonTerminal 5; NonTerminal 4 ] };
+    { lhs = 4; rhs = [] };
+    { lhs = 5; rhs = [ Terminal "("; NonTerminal 1; Terminal ")" ] };
+    { lhs = 5; rhs = [ Terminal "id" ] };
+  ]
+
+(* Example grammar from Example 4-10 for common prefix extraction. *)
 let grammar_example_4_10 =
   [
     { lhs = 1; rhs = [ Terminal "a"; NonTerminal 1; Terminal "b" ] };
@@ -18,7 +35,7 @@ let grammar_example_4_10 =
     { lhs = 1; rhs = [ Terminal "b" ] };
   ]
 
-(* Example grammar from Example 4.14. *)
+(* Example grammar from Example 4-14 for left recursion elimination. *)
 let grammar_example_4_14 =
   [
     { lhs = 1; rhs = [ NonTerminal 2; Terminal "c" ] };
@@ -220,3 +237,60 @@ let eliminate_common_prefix (grammar : grammar) : grammar =
         replace a (alloc_nonterminal_id g) forest rules @ aux others rest
   in
   aux grammar (nonterminals grammar)
+
+module DeducedHeadSet = Set.Make (struct
+  type t = string option
+
+  let compare = compare
+end)
+
+let deduced_head (grammar : grammar) (a : int) : DeducedHeadSet.t = failwith "todo"
+
+type first_symbol =
+  | FirstSymNormal of symbol
+  | FirstSymEpsilon
+
+module FirstSet = Set.Make (struct
+  type t = first_symbol
+
+  let compare = compare
+end)
+
+let deduced_head_to_first (s : DeducedHeadSet.t) : FirstSet.t =
+  DeducedHeadSet.to_list s
+  |> List.map (fun e ->
+      match e with
+      | Some s -> FirstSymNormal (Terminal s)
+      | None -> FirstSymEpsilon)
+  |> FirstSet.of_list
+
+let first (grammar : grammar) (str : symbol list) : FirstSet.t =
+  let rec aux = failwith "todo" in
+  match str with
+  | [] -> FirstSet.singleton FirstSymEpsilon
+  | s -> failwith "todo"
+
+type follow_symbol =
+  | FollowSymNormal of symbol
+  | FollowSymEof
+
+module FollowSet = Set.Make (struct
+  type t = follow_symbol
+
+  let compare = compare
+end)
+
+let first_to_follow (first : FirstSet.t) : FollowSet.t =
+  FirstSet.elements first
+  |> List.filter_map (fun e ->
+      match e with
+      | FirstSymNormal sym -> Some (FollowSymNormal sym)
+      | FirstSymEpsilon -> None)
+  |> FollowSet.of_list
+
+let starting_nonterminal_of (grammar : grammar) : int =
+  match grammar with
+  | [] -> failwith "empty grammar"
+  | first :: _ -> first.lhs
+
+let follow (grammar : grammar) (a : symbol) : follow_symbol list = failwith "todo"
