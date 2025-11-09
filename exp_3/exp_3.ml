@@ -1,7 +1,6 @@
 type symbol =
   | Terminal of string
   | NonTerminal of int
-  | Epsilon
 
 (* A context-free production rule. *)
 type production = {
@@ -68,7 +67,7 @@ let eliminate_direct_left_recursion (grammar : grammar) : grammar =
                   | _ -> failwith "unreachable")
                 recs
             (* => A' -> ε *)
-            @ [ { lhs = a'; rhs = [ Epsilon ] } ]
+            @ [ { lhs = a'; rhs = [] } ]
           in
           aux g' rest
   in
