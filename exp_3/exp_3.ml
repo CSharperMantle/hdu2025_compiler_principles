@@ -130,8 +130,7 @@ let join_trie (trie : trie option) (str : symbol list) : trie =
     | sym :: rest -> TrieNode (sym, make_trie rest)
   in
   let rec graft_trie = function
-    | TrieTerminal -> TrieTerminal
-    | TrieBranch _ -> TrieTerminal
+    | TrieTerminal | TrieBranch _ -> TrieTerminal
     | TrieNode (s, t) -> TrieNode (s, graft_trie t)
   in
   let rec aux tr str =
@@ -164,31 +163,29 @@ type trie_forest = trie list
 
 let trie_forest_empty : trie list = []
 
-let join_forest (forest : trie_forest) (str : symbol list) : trie_forest =
-  let rec aux str = function
-    | [] -> [ join_trie None str ]
-    | this :: rest -> (
-        match (this, str) with
-        | TrieNode (s1, _), s2 :: _ when s1 = s2 -> join_trie (Some this) str :: rest
-        | _, _ -> this :: aux str rest)
-  in
-  aux str forest
+let rec join_forest (forest : trie_forest) (str : symbol list) : trie_forest =
+  match forest with
+  | [] -> [ join_trie None str ]
+  | this :: rest -> (
+      match (this, str) with
+      | TrieNode (s1, _), s2 :: _ when s1 = s2 -> join_trie (Some this) str :: rest
+      | _, _ -> this :: join_forest rest str)
+
+let rec has_prefix (lhs : symbol list) (rhs : symbol list) : bool =
+  match (lhs, rhs) with
+  | _, [] -> true (* ε is a prefix of any string. *)
+  | [], _ :: _ -> false (* non-ε isn't a prefix of ε. *)
+  | l0 :: _, r0 :: _ when l0 <> r0 -> false
+  | _ :: lr, _ :: rr -> has_prefix lr rr
+
+let rec subtract_prefix (lhs : symbol list) (rhs : symbol list) : symbol list =
+  match (lhs, rhs) with
+  | [], _ -> [] (* ε \ anything -> ε *)
+  | _ :: _, [] -> lhs (* s \ ε -> s *)
+  | l0 :: lr, r0 :: rr when l0 = r0 -> subtract_prefix lr rr
+  | _, _ -> lhs (* The common prefix has been consumed. *)
 
 let eliminate_common_prefix (grammar : grammar) : grammar =
-  let rec has_prefix lhs rhs =
-    match (lhs, rhs) with
-    | _, [] -> true (* ε is a prefix of any string. *)
-    | [], _ :: _ -> false (* non-ε isn't a prefix of ε. *)
-    | l0 :: _, r0 :: _ when l0 <> r0 -> false
-    | _ :: lr, _ :: rr -> has_prefix lr rr
-  in
-  let rec subtract_prefix lhs rhs =
-    match (lhs, rhs) with
-    | [], _ -> [] (* ε \ anything -> ε *)
-    | _ :: _, [] -> lhs (* s \ ε -> s *)
-    | l0 :: lr, r0 :: rr when l0 = r0 -> subtract_prefix lr rr
-    | _, _ -> lhs (* The common prefix has been consumed. *)
-  in
   let rec aux g = function
     | [] -> g
     | a :: rest ->
