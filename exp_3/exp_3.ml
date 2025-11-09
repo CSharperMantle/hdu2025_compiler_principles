@@ -10,6 +10,14 @@ type production = {
 
 type grammar = production list
 
+(* Example grammar from Example 4.10. *)
+let grammar_example_4_10 =
+  [
+    { lhs = 1; rhs = [ Terminal "a"; NonTerminal 1; Terminal "b" ] };
+    { lhs = 1; rhs = [ Terminal "a"; NonTerminal 1; Terminal "a" ] };
+    { lhs = 1; rhs = [ Terminal "b" ] };
+  ]
+
 (* Example grammar from Example 4.14. *)
 let grammar_example_4_14 =
   [
@@ -147,7 +155,14 @@ let join_trie (trie : trie option) (str : symbol list) : trie =
   | None -> make_trie str
   | Some trie -> graft_trie (aux trie str)
 
+let rec collect_trie_prefix (trie : trie) : symbol list =
+  match trie with
+  | TrieTerminal | TrieBranch _ -> []
+  | TrieNode (s, child) -> s :: collect_trie_prefix child
+
 type trie_forest = trie list
+
+let trie_forest_empty : trie list = []
 
 let join_forest (forest : trie_forest) (str : symbol list) : trie_forest =
   let rec aux str = function
@@ -158,3 +173,53 @@ let join_forest (forest : trie_forest) (str : symbol list) : trie_forest =
         | _, _ -> this :: aux str rest)
   in
   aux str forest
+
+let eliminate_common_prefix (grammar : grammar) : grammar =
+  let rec has_prefix lhs rhs =
+    match (lhs, rhs) with
+    | _, [] -> true (* ε is a prefix of any string. *)
+    | [], _ :: _ -> false (* non-ε isn't a prefix of ε. *)
+    | l0 :: _, r0 :: _ when l0 <> r0 -> false
+    | _ :: lr, _ :: rr -> has_prefix lr rr
+  in
+  let rec subtract_prefix lhs rhs =
+    match (lhs, rhs) with
+    | [], _ -> [] (* ε \ anything -> ε *)
+    | _ :: _, [] -> lhs (* s \ ε -> s *)
+    | l0 :: lr, r0 :: rr when l0 = r0 -> subtract_prefix lr rr
+    | _, _ -> lhs (* The common prefix has been consumed. *)
+  in
+  let rec aux g = function
+    | [] -> g
+    | a :: rest ->
+        let rec build_forest = function
+          | [] -> trie_forest_empty
+          | rule :: remaining -> join_forest (build_forest remaining) rule.rhs
+        in
+        let rec replace a a' forest rules =
+          match forest with
+          | [] -> rules
+          | tree :: forest' ->
+              let prefix = collect_trie_prefix tree in
+              let prefixed, other_rules =
+                List.partition
+                  (* s is a prefix of s, so filter that out. *)
+                  (fun r -> has_prefix r.rhs prefix && List.length r.rhs <> List.length prefix)
+                  rules
+              in
+              let prefix_empty = List.is_empty prefixed in
+              (* => A' -> b1 | b2 | ... | bn *)
+              let a'_rules =
+                List.map (fun r -> { lhs = a'; rhs = subtract_prefix r.rhs prefix }) prefixed
+              in
+              (if prefix_empty then []
+               else
+                 (* A -> a(b1 | b2 | ... | bn) => A -> aA' *)
+                 [ { lhs = a; rhs = prefix @ [ NonTerminal a' ] } ] @ a'_rules)
+              @ replace a (if prefix_empty then a' else a' + 1) forest' other_rules
+        in
+        let rules, others = List.partition (fun r -> r.lhs = a) g in
+        let forest = build_forest rules in
+        replace a (alloc_nonterminal_id g) forest rules @ aux others rest
+  in
+  aux grammar (nonterminals grammar)
