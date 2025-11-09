@@ -37,12 +37,9 @@ let nonterminals (g : grammar) : int list =
   SAFETY:
     We don't care about holes in numbering.
 *)
-let alloc_nonterminal_id (g : grammar) : int =
-  let nt = nonterminals g in
-  List.fold_left max 0 nt + 1
+let alloc_nonterminal_id (g : grammar) : int = List.fold_left max 0 (nonterminals g) + 1
 
 let eliminate_direct_left_recursion (grammar : grammar) : grammar =
-  let nt = nonterminals grammar in
   let rec aux g = function
     | [] -> g
     | a :: rest ->
@@ -75,10 +72,9 @@ let eliminate_direct_left_recursion (grammar : grammar) : grammar =
           in
           aux g' rest
   in
-  aux grammar nt
+  aux grammar (nonterminals grammar)
 
 let eliminate_left_recursion (grammar : grammar) : grammar =
-  let nt = nonterminals grammar in
   let rec aux scanned g =
     (*
       Substitute away non-terminal B from A -> Bb.
@@ -111,10 +107,10 @@ let eliminate_left_recursion (grammar : grammar) : grammar =
           List.flatten (List.map (fun r -> if List.mem r candidates then substitute r else [ r ]) g)
         in
         (* If the grammar changed, reiterate to find new substitution opportunities. *)
-        if g' <> g then aux [] g' nt
+        if g' <> g then aux [] g' (a :: rest)
         else aux (a :: scanned) (eliminate_direct_left_recursion g') rest
   in
-  aux [] grammar nt
+  aux [] grammar (nonterminals grammar)
 
 type trie =
   | TrieNode of symbol * trie
