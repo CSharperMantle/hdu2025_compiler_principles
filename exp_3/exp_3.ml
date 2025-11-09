@@ -115,3 +115,51 @@ let eliminate_left_recursion (grammar : grammar) : grammar =
         else aux (a :: scanned) (eliminate_direct_left_recursion g') rest
   in
   aux [] grammar nt
+
+type trie =
+  | TrieNode of symbol * trie
+  | TrieBranch of trie list
+  | TrieTerminal
+
+let join_trie (trie : trie option) (str : symbol list) : trie =
+  let rec make_trie = function
+    | [] -> TrieTerminal
+    | sym :: rest -> TrieNode (sym, make_trie rest)
+  in
+  let rec graft_trie = function
+    | TrieTerminal -> TrieTerminal
+    | TrieBranch _ -> TrieTerminal
+    | TrieNode (s, t) -> TrieNode (s, graft_trie t)
+  in
+  let rec aux tr str =
+    match (tr, str) with
+    | TrieTerminal, [] -> TrieTerminal
+    | TrieTerminal, _ -> TrieBranch [ TrieTerminal; make_trie str ]
+    | TrieNode (s1, child), s2 :: rest when s1 = s2 -> TrieNode (s1, aux child rest)
+    | TrieNode (s, child), _ -> TrieBranch [ TrieNode (s, child); make_trie str ]
+    | TrieBranch children, _ ->
+        let rec merge = function
+          | [] -> [ make_trie str ]
+          | first :: rest -> (
+              match (first, str) with
+              | TrieNode (s, child), s' :: rest' when s = s' ->
+                  TrieNode (s, aux child rest') :: rest
+              | _ -> first :: merge rest)
+        in
+        TrieBranch (merge children)
+  in
+  match trie with
+  | None -> make_trie str
+  | Some trie -> graft_trie (aux trie str)
+
+type trie_forest = trie list
+
+let join_forest (forest : trie_forest) (str : symbol list) : trie_forest =
+  let rec aux str = function
+    | [] -> [ join_trie None str ]
+    | this :: rest -> (
+        match (this, str) with
+        | TrieNode (s1, _), s2 :: _ when s1 = s2 -> join_trie (Some this) str :: rest
+        | _, _ -> this :: aux str rest)
+  in
+  aux str forest
