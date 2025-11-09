@@ -15,4 +15,11 @@ WIP.
   * [x] NFA转DFA算法实现
   * [x] DFA最小化算法及实现
   * [x] 报告（[report.typ](exp_2/report.typ)）
+* [exp_3/](exp_3/)：《实验项目3：语法分析器设计原理》
+  * [x] 上下文无关文法的左递归消去算法实现
+  * [x] 上下文无关文法的左公共因子提取算法实现
+  * [ ] FIRST集和FOLLOW集求解
+  * [ ] LL(1)文法判别和预测分析表生成
+  * [ ] 递归下降子程序法实现
+  * [ ] 报告（[report.typ](exp_3/report.typ)）
 * TBA.
