@@ -244,7 +244,47 @@ module DeducedHeadSet = Set.Make (struct
   let compare = compare
 end)
 
-let deduced_head (grammar : grammar) (a : int) : DeducedHeadSet.t = failwith "todo"
+(* Get all initial terminals that can be deduced from a symbol. *)
+let deduced_head (grammar : grammar) (symbol : symbol) : DeducedHeadSet.t =
+  let rec rhs_heads table rhs =
+    match rhs with
+    | [] -> DeducedHeadSet.singleton None (* ε *)
+    | Terminal s :: _ -> DeducedHeadSet.singleton (Some s)
+    | NonTerminal b :: rest ->
+        let sb = List.assoc b table in
+        let sans_eps = DeducedHeadSet.filter (fun x -> x <> None) sb in
+        if DeducedHeadSet.mem None sb then
+          (* b -> ε, so continue with rest *)
+          DeducedHeadSet.union sans_eps (rhs_heads table rest)
+        else sans_eps
+  in
+  let rec iterate table =
+    let table' =
+      List.map
+        (fun (nt, set) ->
+          let set' =
+            List.fold_left
+              (fun acc prod -> DeducedHeadSet.union acc (rhs_heads table prod.rhs))
+              set
+              (List.filter (fun p -> p.lhs = nt) grammar)
+          in
+          (nt, set'))
+        table
+    in
+    let changed =
+      List.exists2
+        (fun (_, old_set) (_, new_set) -> not (DeducedHeadSet.equal old_set new_set))
+        table table'
+    in
+    if changed then iterate table' else table'
+  in
+  match symbol with
+  | Terminal s -> DeducedHeadSet.singleton (Some s)
+  | NonTerminal a ->
+      let nts = nonterminals grammar in
+      let init_table = List.map (fun nt -> (nt, DeducedHeadSet.empty)) nts in
+      let final_table = iterate init_table in
+      List.assoc a final_table
 
 type first_symbol =
   | FirstSymNormal of symbol
@@ -265,10 +305,17 @@ let deduced_head_to_first (s : DeducedHeadSet.t) : FirstSet.t =
   |> FirstSet.of_list
 
 let first (grammar : grammar) (str : symbol list) : FirstSet.t =
-  let rec aux = failwith "todo" in
-  match str with
-  | [] -> FirstSet.singleton FirstSymEpsilon
-  | s -> failwith "todo"
+  let rec aux g some = function
+    | [] -> if some then FirstSet.empty else FirstSet.singleton FirstSymEpsilon
+    | x :: rest ->
+        let heads = deduced_head g x |> deduced_head_to_first in
+        let sans_eps = FirstSet.filter (fun e -> e <> FirstSymEpsilon) heads in
+        let this_some = not (FirstSet.is_empty sans_eps) in
+        if FirstSet.mem FirstSymEpsilon heads then
+          FirstSet.union sans_eps (aux g (some || this_some) rest)
+        else sans_eps
+  in
+  if List.is_empty str then FirstSet.singleton FirstSymEpsilon else aux grammar false str
 
 type follow_symbol =
   | FollowSymNormal of symbol
