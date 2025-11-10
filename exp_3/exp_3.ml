@@ -305,17 +305,14 @@ let deduced_head_to_first (s : DeducedHeadSet.t) : FirstSet.t =
   |> FirstSet.of_list
 
 let first (grammar : grammar) (str : symbol list) : FirstSet.t =
-  let rec aux g some = function
-    | [] -> if some then FirstSet.empty else FirstSet.singleton FirstSymEpsilon
+  let rec aux = function
+    | [] -> FirstSet.singleton FirstSymEpsilon
     | x :: rest ->
-        let heads = deduced_head g x |> deduced_head_to_first in
+        let heads = deduced_head grammar x |> deduced_head_to_first in
         let sans_eps = FirstSet.filter (fun e -> e <> FirstSymEpsilon) heads in
-        let this_some = not (FirstSet.is_empty sans_eps) in
-        if FirstSet.mem FirstSymEpsilon heads then
-          FirstSet.union sans_eps (aux g (some || this_some) rest)
-        else sans_eps
+        if FirstSet.mem FirstSymEpsilon heads then FirstSet.union sans_eps (aux rest) else sans_eps
   in
-  if List.is_empty str then FirstSet.singleton FirstSymEpsilon else aux grammar false str
+  if List.is_empty str then FirstSet.singleton FirstSymEpsilon else aux str
 
 type follow_symbol =
   | FollowSymNormal of symbol
@@ -340,4 +337,54 @@ let starting_nonterminal_of (grammar : grammar) : int =
   | [] -> failwith "empty grammar"
   | first :: _ -> first.lhs
 
-let follow (grammar : grammar) (a : symbol) : follow_symbol list = failwith "todo"
+type follow_sets = (int * FollowSet.t) list
+
+let follow (grammar : grammar) : follow_sets =
+  let rec iterate g table =
+    let table' =
+      (* For each nonterminal ... *)
+      List.map
+        (fun (nt, set) ->
+          let set' =
+            (* For each rule ... *)
+            List.fold_left
+              (fun acc prod ->
+                let rec scan_rhs rule =
+                  match rule with
+                  | [] -> FollowSet.empty
+                  | NonTerminal b :: beta when b = nt ->
+                      (* ...Bβ *)
+                      let first_beta = first g beta in
+                      let follow_from_lhs =
+                        if FirstSet.mem FirstSymEpsilon first_beta then
+                          (* A -> αB, A -> αBβ and β =>* ε *) List.assoc prod.lhs table
+                        else FollowSet.empty
+                      in
+                      FollowSet.union
+                        (FollowSet.union (first_to_follow first_beta) follow_from_lhs)
+                        (scan_rhs beta)
+                  | _ :: rest -> scan_rhs rest
+                in
+                FollowSet.union acc (scan_rhs prod.rhs))
+              set g
+          in
+          (nt, set'))
+        table
+    in
+    if List.exists2 (fun (_, set) (_, set') -> not (FollowSet.equal set set')) table table' then
+      iterate g table'
+    else table'
+  in
+  let start = starting_nonterminal_of grammar and nt = nonterminals grammar in
+  let initial =
+    List.map
+      (fun id ->
+        if id = start then (id, FollowSet.singleton FollowSymEof) else (id, FollowSet.empty))
+      nt
+  in
+  iterate grammar initial
+
+let follow_of (a : int) (follow : follow_sets) = List.assoc a follow
+
+let flatten_follow (follow : follow_sets) =
+  List.map (fun (a, set) -> (a, FollowSet.to_list set)) follow
