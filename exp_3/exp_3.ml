@@ -440,33 +440,64 @@ type parser_row = {
   inputs : (string option * production) list;
 }
 
-type parser = parser_row list
+type parser = {
+  start : int;
+  rows : parser_row list;
+}
 
 let make_parser (grammar : grammar) : parser =
   if not (decide_ll_1 grammar) then failwith "not an LL(1) grammar"
   else
     let follows = follow grammar in
-    List.map
-      (fun a ->
-        let inputs =
-          (* ∀A -> α ... *)
-          List.filter (fun r -> r.lhs = a) grammar
-          |> List.map (fun r ->
-              first grammar r.rhs |> FirstSet.to_list
-              (* ... Va ∈ FIRST(α) ...*)
-              |> List.map (fun sym ->
-                  (* ... M[..., a] = A -> α *)
-                  match sym with
-                  | FirstSymNormal s -> [ (Some s, r) ]
-                  | FirstSymEpsilon ->
-                      (* ∀A -> α | ε ∈ FIRST(α). Vb ∈ FOLLOW(A). M[A, b] = A -> α *)
-                      follow_of a follows |> FollowSet.to_list
-                      |> List.map (fun b ->
-                          match b with
-                          | FollowSymNormal s -> (Some s, r)
-                          | FollowSymEof -> (None, r)))
-              |> List.flatten)
-          |> List.flatten
+    let rows =
+      List.map
+        (fun a ->
+          let inputs =
+            (* ∀A -> α ... *)
+            List.filter (fun r -> r.lhs = a) grammar
+            |> List.map (fun r ->
+                first grammar r.rhs |> FirstSet.to_list
+                (* ... Va ∈ FIRST(α) ...*)
+                |> List.map (fun sym ->
+                    (* ... M[..., a] = A -> α *)
+                    match sym with
+                    | FirstSymNormal s -> [ (Some s, r) ]
+                    | FirstSymEpsilon ->
+                        (* ∀A -> α | ε ∈ FIRST(α). Vb ∈ FOLLOW(A). M[A, b] = A -> α *)
+                        follow_of a follows |> FollowSet.to_list
+                        |> List.map (fun b ->
+                            match b with
+                            | FollowSymNormal s -> (Some s, r)
+                            | FollowSymEof -> (None, r)))
+                |> List.flatten)
+            |> List.flatten
+          in
+          { nonterm = a; inputs })
+        (nonterminals grammar)
+    in
+    { start = starting_nonterminal_of grammar; rows }
+
+let parse (tokens : string list) (parser : parser) : bool =
+  let rec aux stack input =
+    match (stack, input) with
+    | [], [] -> true
+    | [], _ :: _ -> false (* Input remains but stack is empty *)
+    | Terminal s0 :: stack', t0 :: input' ->
+        if s0 = t0 then aux stack' input' else false (* Terminal mismatch *)
+    | Terminal _ :: _, [] -> false (* Expecting terminal but input exhausted *)
+    | NonTerminal a :: stack', _ -> (
+        let lookahead =
+          match input with
+          | [] -> None
+          | tok :: _ -> Some tok
         in
-        { nonterm = a; inputs })
-      (nonterminals grammar)
+        let row = List.find_opt (fun r -> r.nonterm = a) parser.rows in
+        match row with
+        | None -> false (* No rule for this nonterminal *)
+        | Some r -> (
+            let prod = List.find_opt (fun (tok, _) -> tok = lookahead) r.inputs in
+            match prod with
+            | None -> false (* No production for this input *)
+            | Some (_, p) -> aux (p.rhs @ stack') input))
+  in
+  aux [ NonTerminal parser.start ] tokens
