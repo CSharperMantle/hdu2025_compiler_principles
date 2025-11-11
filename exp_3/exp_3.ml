@@ -238,24 +238,24 @@ let eliminate_common_prefix (grammar : grammar) : grammar =
   in
   aux grammar (nonterminals grammar)
 
-module DeducedHeadSet = Set.Make (struct
+module DeducedInitialSet = Set.Make (struct
   type t = string option
 
   let compare = compare
 end)
 
 (* Get all initial terminals that can be deduced from a symbol. *)
-let deduced_head (grammar : grammar) (symbol : symbol) : DeducedHeadSet.t =
-  let rec rhs_heads table rhs =
+let deduced_initials (grammar : grammar) (symbol : symbol) : DeducedInitialSet.t =
+  let rec rhs_initials table rhs =
     match rhs with
-    | [] -> DeducedHeadSet.singleton None (* ε *)
-    | Terminal s :: _ -> DeducedHeadSet.singleton (Some s)
+    | [] -> DeducedInitialSet.singleton None (* ε *)
+    | Terminal s :: _ -> DeducedInitialSet.singleton (Some s)
     | NonTerminal b :: rest ->
         let sb = List.assoc b table in
-        let sans_eps = DeducedHeadSet.filter (fun x -> x <> None) sb in
-        if DeducedHeadSet.mem None sb then
+        let sans_eps = DeducedInitialSet.filter (fun x -> x <> None) sb in
+        if DeducedInitialSet.mem None sb then
           (* b -> ε, so continue with rest *)
-          DeducedHeadSet.union sans_eps (rhs_heads table rest)
+          DeducedInitialSet.union sans_eps (rhs_initials table rest)
         else sans_eps
   in
   let rec iterate table =
@@ -264,7 +264,7 @@ let deduced_head (grammar : grammar) (symbol : symbol) : DeducedHeadSet.t =
         (fun (nt, set) ->
           let set' =
             List.fold_left
-              (fun acc prod -> DeducedHeadSet.union acc (rhs_heads table prod.rhs))
+              (fun acc prod -> DeducedInitialSet.union acc (rhs_initials table prod.rhs))
               set
               (List.filter (fun p -> p.lhs = nt) grammar)
           in
@@ -273,16 +273,16 @@ let deduced_head (grammar : grammar) (symbol : symbol) : DeducedHeadSet.t =
     in
     let changed =
       List.exists2
-        (fun (_, old_set) (_, new_set) -> not (DeducedHeadSet.equal old_set new_set))
+        (fun (_, old_set) (_, new_set) -> not (DeducedInitialSet.equal old_set new_set))
         table table'
     in
     if changed then iterate table' else table'
   in
   match symbol with
-  | Terminal s -> DeducedHeadSet.singleton (Some s)
+  | Terminal s -> DeducedInitialSet.singleton (Some s)
   | NonTerminal a ->
       let nts = nonterminals grammar in
-      let init_table = List.map (fun nt -> (nt, DeducedHeadSet.empty)) nts in
+      let init_table = List.map (fun nt -> (nt, DeducedInitialSet.empty)) nts in
       let final_table = iterate init_table in
       List.assoc a final_table
 
@@ -296,8 +296,8 @@ module FirstSet = Set.Make (struct
   let compare = compare
 end)
 
-let deduced_head_to_first (s : DeducedHeadSet.t) : FirstSet.t =
-  DeducedHeadSet.to_list s
+let deduced_initials_to_first (s : DeducedInitialSet.t) : FirstSet.t =
+  DeducedInitialSet.to_list s
   |> List.map (fun e ->
       match e with
       | Some s -> FirstSymNormal (Terminal s)
@@ -308,9 +308,10 @@ let first (grammar : grammar) (str : symbol list) : FirstSet.t =
   let rec aux = function
     | [] -> FirstSet.singleton FirstSymEpsilon
     | x :: rest ->
-        let heads = deduced_head grammar x |> deduced_head_to_first in
-        let sans_eps = FirstSet.filter (fun e -> e <> FirstSymEpsilon) heads in
-        if FirstSet.mem FirstSymEpsilon heads then FirstSet.union sans_eps (aux rest) else sans_eps
+        let initials = deduced_initials grammar x |> deduced_initials_to_first in
+        let sans_eps = FirstSet.filter (fun e -> e <> FirstSymEpsilon) initials in
+        if FirstSet.mem FirstSymEpsilon initials then FirstSet.union sans_eps (aux rest)
+        else sans_eps
   in
   if List.is_empty str then FirstSet.singleton FirstSymEpsilon else aux str
 
