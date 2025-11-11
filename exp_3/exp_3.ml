@@ -388,3 +388,41 @@ let follow_of (a : int) (follow : follow_sets) = List.assoc a follow
 
 let flatten_follow (follow : follow_sets) =
   List.map (fun (a, set) -> (a, FollowSet.to_list set)) follow
+
+let combinations (k : int) (l : 'a list) : 'a list list =
+  let rec aux k l acc =
+    match (k, l) with
+    | 0, _ -> [ List.rev acc ]
+    | _, [] -> []
+    | k, x :: rest -> aux (k - 1) rest (x :: acc) @ aux k rest acc
+  in
+  aux k l []
+
+let reduce_left_unwrap (f : 'a -> 'a -> 'a) (l : 'a list) : 'a =
+  match l with
+  | [] -> failwith "empty list"
+  | x :: rest -> List.fold_left f x rest
+
+let decide_ll_1 (grammar : grammar) : bool =
+  let decide_one_nonterm g follows a =
+    let firsts =
+      List.filter_map (fun r -> if r.lhs = a then Some (first g r.rhs) else None) g
+      |> combinations 2
+    and follow_a = follow_of a follows in
+    (* ∀α,β in A -> α|β. FIRST(α) ∩ FIRST(β) = ∅ *)
+    let cond_1 =
+      List.for_all
+        (fun tuple ->
+          FirstSet.is_empty (reduce_left_unwrap (fun s si -> FirstSet.inter s si) tuple))
+        firsts
+    (* ∀α,β | (ε ∈ FIRST(α) ∨ ε ∈ FIRST(β)). (FOLLOW(A) ∩ FIRST(α) = ∅ ∨ FOLLOW(A) ∩ FIRST(β) = ∅) *)
+    and cond_2 =
+      List.filter (fun tuple -> List.exists (fun s -> FirstSet.mem FirstSymEpsilon s) tuple) firsts
+      |> List.for_all (fun tuple ->
+          List.exists
+            (fun s -> FollowSet.is_empty (FollowSet.inter follow_a (first_to_follow s)))
+            tuple)
+    in
+    cond_1 && cond_2
+  and follows = follow grammar in
+  List.for_all (decide_one_nonterm grammar follows) (nonterminals grammar)
