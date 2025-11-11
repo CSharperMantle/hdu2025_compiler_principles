@@ -287,7 +287,7 @@ let deduced_initials (grammar : grammar) (symbol : symbol) : DeducedInitialSet.t
       List.assoc a final_table
 
 type first_symbol =
-  | FirstSymNormal of symbol
+  | FirstSymNormal of string
   | FirstSymEpsilon
 
 module FirstSet = Set.Make (struct
@@ -300,7 +300,7 @@ let deduced_initials_to_first (s : DeducedInitialSet.t) : FirstSet.t =
   DeducedInitialSet.to_list s
   |> List.map (fun e ->
       match e with
-      | Some s -> FirstSymNormal (Terminal s)
+      | Some s -> FirstSymNormal s
       | None -> FirstSymEpsilon)
   |> FirstSet.of_list
 
@@ -316,7 +316,7 @@ let first (grammar : grammar) (str : symbol list) : FirstSet.t =
   if List.is_empty str then FirstSet.singleton FirstSymEpsilon else aux str
 
 type follow_symbol =
-  | FollowSymNormal of symbol
+  | FollowSymNormal of string
   | FollowSymEof
 
 module FollowSet = Set.Make (struct
@@ -457,15 +457,13 @@ let make_analyzer (grammar : grammar) : analyzer =
               |> List.map (fun sym ->
                   (* ... M[..., a] = A -> α *)
                   match sym with
-                  | FirstSymNormal (Terminal s) -> [ (Some s, r) ]
-                  | FirstSymNormal (NonTerminal _) -> failwith "impossible first set"
+                  | FirstSymNormal s -> [ (Some s, r) ]
                   | FirstSymEpsilon ->
                       (* ∀A -> α | ε ∈ FIRST(α). Vb ∈ FOLLOW(A). M[A, b] = A -> α *)
                       follow_of a follows |> FollowSet.to_list
                       |> List.map (fun b ->
                           match b with
-                          | FollowSymNormal (Terminal s) -> (Some s, r)
-                          | FollowSymNormal (NonTerminal _) -> failwith "impossible follow set"
+                          | FollowSymNormal s -> (Some s, r)
                           | FollowSymEof -> (None, r)))
               |> List.flatten)
           |> List.flatten
