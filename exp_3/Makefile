@@ -2,7 +2,7 @@
 all: exp_3
 
 exp_3: exp_3.ml
-	ocamlopt -o $@ $^
+	ocamlopt -g -o $@ $^
 
 .PHONY: run
 run: exp_3
