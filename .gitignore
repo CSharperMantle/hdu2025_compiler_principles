@@ -5,6 +5,10 @@ exp_2/exp_2
 exp_2/exp_2.*
 !exp_2/exp_2.ml
 !exp_2/exp_2.opam
+exp_3/exp_3
+exp_3/exp_3.*
+!exp_3/exp_3.ml
+!exp_3/exp_3.opam
 *.pdf
 **/a/
 **/b/
