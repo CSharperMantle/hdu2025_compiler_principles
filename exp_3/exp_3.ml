@@ -429,3 +429,46 @@ let decide_ll_1 (grammar : grammar) : bool =
     cond_1 && cond_2
   and follows = follow grammar in
   List.for_all (decide_one_nonterm grammar follows) (nonterminals grammar)
+
+(* A row in the LL(1) analyzer. *)
+type analyzer_row = {
+  (* Nonterminal on the LHS. *)
+  nonterm : int;
+  (*
+    Shape: (Terminal or $, production.rhs)[].
+  *)
+  inputs : (string option * production) list;
+}
+
+type analyzer = analyzer_row list
+
+let make_analyzer (grammar : grammar) : analyzer =
+  if not (decide_ll_1 grammar) then failwith "not an LL(1) grammar"
+  else
+    let follows = follow grammar in
+    List.map
+      (fun a ->
+        let inputs =
+          (* ∀A -> α ... *)
+          List.filter (fun r -> r.lhs = a) grammar
+          |> List.map (fun r ->
+              first grammar r.rhs |> FirstSet.to_list
+              (* ... Va ∈ FIRST(α) ...*)
+              |> List.map (fun sym ->
+                  (* ... M[..., a] = A -> α *)
+                  match sym with
+                  | FirstSymNormal (Terminal s) -> [ (Some s, r) ]
+                  | FirstSymNormal (NonTerminal _) -> failwith "impossible first set"
+                  | FirstSymEpsilon ->
+                      (* ∀A -> α | ε ∈ FIRST(α). Vb ∈ FOLLOW(A). M[A, b] = A -> α *)
+                      follow_of a follows |> FollowSet.to_list
+                      |> List.map (fun b ->
+                          match b with
+                          | FollowSymNormal (Terminal s) -> (Some s, r)
+                          | FollowSymNormal (NonTerminal _) -> failwith "impossible follow set"
+                          | FollowSymEof -> (None, r)))
+              |> List.flatten)
+          |> List.flatten
+        in
+        { nonterm = a; inputs })
+      (nonterminals grammar)
