@@ -430,8 +430,8 @@ let decide_ll_1 (grammar : grammar) : bool =
   and follows = follow grammar in
   List.for_all (decide_one_nonterm grammar follows) (nonterminals grammar)
 
-(* A row in the LL(1) analyzer. *)
-type analyzer_row = {
+(* A row in the LL(1) parser. *)
+type parser_row = {
   (* Nonterminal on the LHS. *)
   nonterm : int;
   (*
@@ -440,9 +440,9 @@ type analyzer_row = {
   inputs : (string option * production) list;
 }
 
-type analyzer = analyzer_row list
+type parser = parser_row list
 
-let make_analyzer (grammar : grammar) : analyzer =
+let make_parser (grammar : grammar) : parser =
   if not (decide_ll_1 grammar) then failwith "not an LL(1) grammar"
   else
     let follows = follow grammar in
