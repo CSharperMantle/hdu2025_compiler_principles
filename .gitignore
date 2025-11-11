@@ -8,6 +8,7 @@ exp_2/exp_2.*
 exp_3/exp_3
 exp_3/exp_3.*
 !exp_3/exp_3.ml
+!exp_3/driver.ml
 !exp_3/exp_3.opam
 *.pdf
 **/a/
