@@ -1,10 +1,13 @@
 ML_SOURCES = lib.ml exp_3.ml
 
 .PHONY: all
-all: exp_3
+all: exp_3 lib.cmo
 
 exp_3: $(ML_SOURCES)
 	ocamlopt -g -o $@ $^
+
+lib.cmo: lib.ml
+	ocamlc -g -c -o $@ $^
 
 .PHONY: run
 run: exp_3
@@ -16,5 +19,5 @@ dune:
 
 .PHONY: clean
 clean:
-	rm -f exp_3 exp_3.cm* exp_3.o
+	rm -f exp_3 *.cm? *.o
 	dune clean
