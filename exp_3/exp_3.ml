@@ -405,7 +405,7 @@ let reduce_left_unwrap (f : 'a -> 'a -> 'a) (l : 'a list) : 'a =
 
 let decide_ll_1 (grammar : grammar) : bool =
   let decide_one_nonterm g follows a =
-    let firsts =
+    let first_pairs =
       List.filter_map (fun r -> if r.lhs = a then Some (first g r.rhs) else None) g
       |> combinations 2
     and follow_a = follow_of a follows in
@@ -414,14 +414,16 @@ let decide_ll_1 (grammar : grammar) : bool =
       List.for_all
         (fun tuple ->
           FirstSet.is_empty (reduce_left_unwrap (fun s si -> FirstSet.inter s si) tuple))
-        firsts
+        first_pairs
     (* ∀α,β | (ε ∈ FIRST(α) ∨ ε ∈ FIRST(β)). (FOLLOW(A) ∩ FIRST(α) = ∅ ∨ FOLLOW(A) ∩ FIRST(β) = ∅) *)
     and cond_2 =
-      List.filter (fun tuple -> List.exists (fun s -> FirstSet.mem FirstSymEpsilon s) tuple) firsts
-      |> List.for_all (fun tuple ->
+      List.filter
+        (fun pair -> List.exists (fun s -> FirstSet.mem FirstSymEpsilon s) pair)
+        first_pairs
+      |> List.for_all (fun pair ->
           List.exists
             (fun s -> FollowSet.is_empty (FollowSet.inter follow_a (first_to_follow s)))
-            tuple)
+            pair)
     in
     cond_1 && cond_2
   and follows = follow grammar in
