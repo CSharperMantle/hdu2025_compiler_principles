@@ -305,7 +305,7 @@ let deduced_initials_to_first (s : DeducedInitialSet.t) : FirstSet.t =
       | None -> FirstSymEpsilon)
   |> FirstSet.of_list
 
-let first (grammar : grammar) (str : symbol list) : FirstSet.t =
+let first (str : symbol list) (grammar : grammar) : FirstSet.t =
   let rec aux = function
     | [] -> FirstSet.singleton FirstSymEpsilon
     | x :: rest ->
@@ -356,7 +356,7 @@ let follow (grammar : grammar) : follow_sets =
                   | [] -> FollowSet.empty
                   | NonTerminal b :: beta when b = nt ->
                       (* ...Bβ *)
-                      let first_beta = first g beta in
+                      let first_beta = first beta g in
                       let follow_from_lhs =
                         if FirstSet.mem FirstSymEpsilon first_beta then
                           (* A -> αB, A -> αBβ and β =>* ε *) List.assoc prod.lhs table
@@ -408,7 +408,7 @@ let reduce_left_unwrap (f : 'a -> 'a -> 'a) (l : 'a list) : 'a =
 let decide_ll_1 (grammar : grammar) : bool =
   let decide_one_nonterm g follows a =
     let first_pairs =
-      List.filter_map (fun r -> if r.lhs = a then Some (first g r.rhs) else None) g
+      List.filter_map (fun r -> if r.lhs = a then Some (first r.rhs g) else None) g
       |> combinations 2
     and follow_a = follow_of a follows in
     (* ∀α,β in A -> α|β. FIRST(α) ∩ FIRST(β) = ∅ *)
