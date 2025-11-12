@@ -194,11 +194,41 @@ $"LL"(1)$ 文法（从左向右扫描、最左推导、向前看 1 个符号文�
 
 == 上下文无关文法左递归消去算法实现
 
+#img(
+  image("assets/task-1-demo.png"),
+  caption: [左递归消去算法演示]
+) <figure:task-1-demo>
+
 == 文法左公共因子提取方法及实现
+
+#img(
+  image("assets/task-2-demo.png"),
+  caption: [左公共因子提取算法演示]
+) <figure:task-2-demo>
 
 == 上下文无关文法 $"FIRST"$ 集和 $"FOLLOW"$ 集求解及实现
 
+#img(
+  image("assets/task-3-grammar.png"),
+  caption: [例 4-6 的文法结构]
+) <figure:task-3-grammar>
+
+#img(
+  image("assets/task-3-demo-first.png"),
+  caption: [部分文法符号的 $"FIRST"$ 集计算演示]
+) <figure:task-3-demo-first>
+
+#img(
+  image("assets/task-3-demo-follow.png"),
+  caption: [所有非终结符的 $"FOLLOW"$ 集计算演示]
+) <figure:task-3-demo-follow>
+
 == $"LL"(1)$ 文法判定与预测分析器设计及实现
+
+#img(
+  image("assets/task-4-demo.png"),
+  caption: [$"LL"(1)$ 分析表与分析器运行演示]
+) <figure:task-4-demo>
 
 = 源代码
 
