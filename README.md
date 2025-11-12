@@ -21,5 +21,5 @@ WIP.
   * [x] FIRST集和FOLLOW集求解
   * [x] LL(1)文法判别和预测分析表生成
   * [x] 递归下降子程序法实现
-  * [ ] 报告（[report.typ](exp_3/report.typ)）
+  * [x] 报告（[report.typ](exp_3/report.typ)）
 * TBA.
