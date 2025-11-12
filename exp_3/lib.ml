@@ -128,10 +128,11 @@ let eliminate_left_recursion (grammar : grammar) : grammar =
             rules
         in
         let g' =
-          List.flatten (List.map (fun r -> if List.mem r candidates then substitute r else [ r ]) g)
+          List.map (fun r -> if List.mem r candidates then substitute r else [ r ]) g
+          |> List.flatten
         in
         (* If the grammar changed, reiterate to find new substitution opportunities. *)
-        if g' <> g then aux [] g' (a :: rest)
+        if g' <> g then aux scanned g' (a :: rest)
         else aux (a :: scanned) (eliminate_direct_left_recursion g') rest
   in
   aux [] grammar (nonterminals grammar)
