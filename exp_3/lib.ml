@@ -457,7 +457,7 @@ let make_parser (grammar : grammar) : parser =
             (* ∀A -> α ... *)
             List.filter (fun r -> r.lhs = a) grammar
             |> List.map (fun r ->
-                first grammar r.rhs |> FirstSet.to_list
+                first r.rhs grammar |> FirstSet.to_list
                 (* ... Va ∈ FIRST(α) ...*)
                 |> List.map (fun sym ->
                     (* ... M[..., a] = A -> α *)
