@@ -11,14 +11,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: ocaml/setup-ocaml@v3
+    - name: Setup OCaml
+      uses: ocaml/setup-ocaml@v3
       with:
         ocaml-compiler: 5.2
-    - name: Install dependencies
-      run: |
-        rustup update stable
-        rustup default stable
-        cargo install --locked typst-cli
+    - name: Install Typst
+      uses: baptiste0928/cargo-install@v3
+      with:
+        crate: typst-cli
     - name: Build
       run: |
         opam exec -- make -j $(nproc) all
