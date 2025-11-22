@@ -15,6 +15,7 @@ exp_3/exp_3.*
 *.pdf
 **/a/
 **/b/
+!assets/refs/**
 
 # Created by https://www.toptal.com/developers/gitignore/api/ocaml,c,flex,visualstudiocode
 # Edit at https://www.toptal.com/developers/gitignore?templates=ocaml,c,flex,visualstudiocode
