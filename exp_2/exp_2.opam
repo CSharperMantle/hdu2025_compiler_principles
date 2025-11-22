@@ -4,7 +4,7 @@ synopsis: "Experiment 2"
 maintainer: ["CSharperMantle <webmaster@csmantle.top>"]
 depends: [
   "dune" {>= "3.20"}
-  "ocaml" {= "5.2.1"}
+  "ocaml" {= "5.4.0"}
   "ocaml-lsp-server"
   "ocamlformat"
   "utop"

@@ -9,7 +9,7 @@
  (name exp_2)
  (synopsis "Experiment 2")
  (depends
-  (ocaml (= 5.2.1))
+  (ocaml (= 5.4.0))
   ocaml-lsp-server
   ocamlformat
   utop))
