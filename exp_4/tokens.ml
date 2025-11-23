@@ -9,7 +9,7 @@ type token =
   | TokenContinue
   | TokenReturn
   | TokenId of string
-  | TokenIntConst of int
+  | TokenIntLit of int
   | TokenPlus
   | TokenMinus
   | TokenMult
@@ -46,7 +46,7 @@ let name_of = function
   | TokenContinue -> "TokenContinue"
   | TokenReturn -> "TokenReturn"
   | TokenId _ -> "TokenId"
-  | TokenIntConst _ -> "TokenIntConst"
+  | TokenIntLit _ -> "TokenIntLit"
   | TokenPlus -> "TokenPlus"
   | TokenMinus -> "TokenMinus"
   | TokenMult -> "TokenMult"
@@ -76,7 +76,7 @@ let token_to_string (token : token) =
   let token_name = name_of token in
   match token with
   | TokenId id -> Format.sprintf "%s %s" token_name id
-  | TokenIntConst n -> Format.sprintf "%s %d" token_name n
+  | TokenIntLit n -> Format.sprintf "%s %d" token_name n
   | _ -> token_name
 
 module StringMap = Map.Make (String)

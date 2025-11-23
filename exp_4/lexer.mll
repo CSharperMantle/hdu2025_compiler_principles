@@ -28,9 +28,9 @@ rule token = parse
       | Some tok -> tok
       | None -> TokenId id
   }
-  | decimal as n     { TokenIntConst (int_of_string ("0u" ^ n)) }
-  | octal as n       { TokenIntConst (int_of_string ("0o" ^ n)) }
-  | hexadecimal as n { TokenIntConst (int_of_string n) }
+  | decimal as n     { TokenIntLit (int_of_string ("0u" ^ n)) }
+  | octal as n       { TokenIntLit (int_of_string ("0o" ^ n)) }
+  | hexadecimal as n { TokenIntLit (int_of_string n) }
   | "+"              { TokenPlus }
   | "-"              { TokenMinus }
   | "*"              { TokenMult }
