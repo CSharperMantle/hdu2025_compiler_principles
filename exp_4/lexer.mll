@@ -1,13 +1,21 @@
 {
 open Tokens
 exception Lexing_error of string
+
+let get_pos lexbuf =
+  let pos = Lexing.lexeme_start_p lexbuf in
+  (pos.pos_lnum, pos.pos_cnum - pos.pos_bol + 1)
+
+let raise_error (message : string) lexbuf =
+  let (lineno, colno) = get_pos lexbuf in
+  raise (Lexing_error (Format.sprintf "%d:%d: %s" lineno colno message))
 }
 
 let whitespace = [' ' '\t' '\r' '\n']
 let digit = ['0'-'9']
 let letter = ['a'-'z' 'A'-'Z']
 let identifier = ('_' | letter) ('_' | letter | digit)*
-let decimal = ['1'-'9'] digit+ (* Rule out octal literals. *)
+let decimal = ['1'-'9'] digit* (* Rule out octal literals. *)
 let octal = '0' ['0'-'7']+
 let hexadecimal = "0x" ['0'-'9' 'a'-'f' 'A'-'F']+
 
@@ -23,7 +31,7 @@ rule token = parse
   | decimal as n     { TokenIntConst (int_of_string ("0u" ^ n)) }
   | octal as n       { TokenIntConst (int_of_string ("0o" ^ n)) }
   | hexadecimal as n { TokenIntConst (int_of_string n) }
-    | "+"              { TokenPlus }
+  | "+"              { TokenPlus }
   | "-"              { TokenMinus }
   | "*"              { TokenMult }
   | "/"              { TokenDiv }
@@ -47,11 +55,11 @@ rule token = parse
   | "{"              { TokenLBrace }
   | "}"              { TokenRBrace }
   | eof              { TokenEof }
-  | _ as c           { raise (Lexing_error (Format.sprintf "Unexpected char: %c" c)) }
+  | _ as c           { raise_error (Format.sprintf "Unexpected char: %c" c) lexbuf }
 
 and block_comment = parse
   | "*/"             { token lexbuf }
-  | eof              { raise (Lexing_error "Unterminated block comment") }
+  | eof              { raise_error "Unterminated block comment" lexbuf }
   | _                { block_comment lexbuf }
 
 {

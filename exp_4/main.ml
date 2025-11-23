@@ -11,12 +11,12 @@ let lex_file filename =
         | Tokens.TokenEof -> ()
         | _ -> print_endline (Tokens.token_to_string tok))
       tokens
-  with e ->
+  with Lexer.Lexing_error msg ->
     close_in ic;
-    raise e
+    Printf.eprintf "Error type A at %s:%s\n" filename msg
 
 let () =
   if Array.length Sys.argv < 2 then (
-    Printf.printf "usage: %s <source-file>\n" Sys.argv.(0);
+    Printf.eprintf "usage: %s <source-file>\n" Sys.argv.(0);
     exit 1);
   lex_file Sys.argv.(1)
