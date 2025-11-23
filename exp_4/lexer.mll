@@ -13,11 +13,11 @@ let raise_error (message : string) lexbuf =
 
 let whitespace = [' ' '\t' '\r' '\n']
 let digit = ['0'-'9']
+let hex_digit = ['0'-'9' 'a'-'f' 'A'-'F']
 let letter = ['a'-'z' 'A'-'Z']
 let identifier = ('_' | letter) ('_' | letter | digit)*
-let decimal = ['1'-'9'] digit* (* Rule out octal literals. *)
-let octal = '0' ['0'-'7']+
-let hexadecimal = "0x" ['0'-'9' 'a'-'f' 'A'-'F']+
+let dec_or_oct = digit+
+let hex = "0x" hex_digit*
 
 rule token = parse
   | whitespace+      { token lexbuf }
@@ -28,9 +28,21 @@ rule token = parse
       | Some tok -> tok
       | None -> TokenId id
   }
-  | decimal as n     { TokenIntLit (int_of_string ("0u" ^ n)) }
-  | octal as n       { TokenIntLit (int_of_string ("0o" ^ n)) }
-  | hexadecimal as n { TokenIntLit (int_of_string n) }
+  | dec_or_oct as n {
+    if String.starts_with ~prefix:"0" n && String.length n > 1 then
+      match int_of_string_opt ("0o" ^ n) with
+      | Some v -> TokenIntLit v
+      | None -> raise_error (Format.sprintf "Bad octal literal: %s" n) lexbuf
+    else
+      match int_of_string_opt ("0u" ^ n) with
+      | Some v -> TokenIntLit v
+      | None -> raise_error (Format.sprintf "Bad decimal literal: %s" n) lexbuf
+  }
+  | hex as n {
+    match int_of_string_opt n with
+    | Some v -> TokenIntLit v
+    | None -> raise_error (Format.sprintf "Bad hexadecimal literal: %s" n) lexbuf
+  }
   | "+"              { TokenPlus }
   | "-"              { TokenMinus }
   | "*"              { TokenMult }
