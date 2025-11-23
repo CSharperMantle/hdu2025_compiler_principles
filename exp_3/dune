@@ -1,3 +1,12 @@
+(library
+  (name lib)
+  (modules lib)
+  (modes byte native))
+
 (executable
   (name exp_3)
-  (public_name exp_3))
+  (public_name exp_3)
+  (modules exp_3)
+  (libraries lib)
+  (modes native)
+  (ocamlopt_flags (:standard -g)))

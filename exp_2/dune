@@ -1,3 +1,7 @@
 (executable
   (name exp_2)
-  (public_name exp_2))
+  (public_name exp_2)
+  (modules exp_2)
+  (modes native)
+  (flags (:standard -warn-error -32))
+  (ocamlopt_flags (:standard -g)))

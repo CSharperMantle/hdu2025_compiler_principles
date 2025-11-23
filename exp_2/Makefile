@@ -1,5 +1,5 @@
 .PHONY: all
-all: exp_2
+all: exp_2 dune
 
 exp_2: exp_2.ml
 	ocamlopt -g -o $@ $^

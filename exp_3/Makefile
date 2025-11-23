@@ -1,7 +1,7 @@
 ML_SOURCES = lib.ml exp_3.ml
 
 .PHONY: all
-all: exp_3 lib.cmo
+all: exp_3 lib.cmo dune
 
 exp_3: $(ML_SOURCES)
 	ocamlopt -g -o $@ $^
