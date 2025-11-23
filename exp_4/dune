@@ -1,0 +1,7 @@
+(ocamllex lexer)
+
+(executable
+ (name main)
+ (public_name exp_4)
+ (modules tokens lexer main)
+ (modes native))

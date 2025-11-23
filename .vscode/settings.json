@@ -17,5 +17,8 @@
         "nonterminal",
         "nonterminals",
         "Printexc"
-    ]
+    ],
+    "files.associations": {
+        "*.sy": "plaintext"
+    }
 }
