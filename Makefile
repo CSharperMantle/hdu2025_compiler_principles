@@ -2,7 +2,7 @@ PROJECTS = exp_1 exp_2 exp_3 exp_4
 
 PROJECT_BIN_SUFFIX = .bin
 PROJECTS_BIN = $(foreach project,$(PROJECTS),$(project)$(PROJECT_BIN_SUFFIX))
-PROJECT_PDF_FILES = $(foreach project,$(PROJECTS),$(project)/report.pdf)
+PROJECT_PDF_FILES = $(foreach project,$(PROJECTS),$(if $(wildcard $(project)/report.typ),$(project)/report.pdf))
 PROJECT_CLEAN_SUFFIX = .clean
 PROJECTS_CLEAN = $(foreach project,$(PROJECTS),$(project)$(PROJECT_CLEAN_SUFFIX))
 
