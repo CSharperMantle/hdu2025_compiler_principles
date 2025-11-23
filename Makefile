@@ -1,4 +1,4 @@
-PROJECTS = exp_1 exp_2 exp_3
+PROJECTS = exp_1 exp_2 exp_3 exp_4
 
 PROJECT_BIN_SUFFIX = .bin
 PROJECTS_BIN = $(foreach project,$(PROJECTS),$(project)$(PROJECT_BIN_SUFFIX))
