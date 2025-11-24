@@ -17,12 +17,13 @@ GREEN='\033[0;32m'
 RESET_COLOR='\033[0m'
 
 echo "Reading tests from $spec_file..."
-while IFS="$(printf '\t')" read -r mode input_file expected_status expected_msg || [ -n "$mode" ]; do
-    # Skip empty lines
-    [ -z "$mode" ] && continue
+while IFS="$(printf '\t')" read -r mode input_file expected_status expected_msg occurrence || [ -n "$mode" ]; do
+    # Skip empty lines or comment
+    [ -z "$mode" ] || [ "$mode" = '#' ] && continue
 
     expected_status=$(echo "$expected_status" | tr -d '\r')
     expected_msg=$(echo "$expected_msg" | tr -d '\r')
+    occurrence=$(echo "$occurrence" | tr -d '\r')
 
     total=$((total + 1))
     
@@ -41,7 +42,14 @@ while IFS="$(printf '\t')" read -r mode input_file expected_status expected_msg 
     elif [ "$expected_status" = "failure" ]; then
         if [ $exit_code -ne 0 ]; then
             if [ -n "$expected_msg" ]; then
-                if echo "$output" | grep -q "$expected_msg"; then
+                if [ -n "$occurrence" ]; then
+                    count=$(echo "$output" | grep -c "$expected_msg")
+                    if [ "$count" -eq "$occurrence" ]; then
+                        passed=1
+                    else
+                        reason="Expected error message '$expected_msg' to occur $occurrence times, found $count times"
+                    fi
+                elif echo "$output" | grep -q "$expected_msg"; then
                     passed=1
                 else
                     reason="Expected error message containing '$expected_msg', got: $output"

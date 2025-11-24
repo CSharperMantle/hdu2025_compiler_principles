@@ -1,11 +1,12 @@
-lex	tests/task_4_2_sample_1.sy	failure	Error type Lexer.Lexing_error
-lex	tests/task_4_2_sample_2.sy	success	
-lex	tests/task_4_2_sample_3.sy	success	
-lex	tests/test_lexer_bad_int_lit_1.sy	failure	Error type Lexer.Lexing_error
-lex	tests/test_lexer_bad_int_lit_2.sy	failure	Error type Lexer.Lexing_error
-lex	tests/test_lexer_bad_int_lit_3.sy	failure	Error type Lexer.Lexing_error
-parse	tests/test_parser_array_1.sy	success	
-parse	tests/test_parser_array_2.sy	success	
-parse	tests/task_4_3_sample_2_single_err_1.sy	failure	Error type Parser.Error
-parse	tests/task_4_3_sample_2_single_err_2.sy	failure	Error type Parser.Error
-parse	tests/task_4_3_sample_2.sy	failure	Error type Parser.Error
+lex	tests/task_4_2_sample_1.sy	failure	Error type Lexer.Lexing_error	1
+lex	tests/task_4_2_sample_2.sy	success		
+lex	tests/task_4_2_sample_3.sy	success		
+lex	tests/test_lexer_bad_int_lit_1.sy	failure	Error type Lexer.Lexing_error	1
+lex	tests/test_lexer_bad_int_lit_2.sy	failure	Error type Lexer.Lexing_error	1
+lex	tests/test_lexer_bad_int_lit_3.sy	failure	Error type Lexer.Lexing_error	1
+parse	tests/test_parser_array_1.sy	success		
+parse	tests/test_parser_array_2.sy	success		
+parse	tests/task_4_3_sample_2_single_err_1.sy	failure	Error type Parser.Error	1
+parse	tests/task_4_3_sample_2_single_err_2.sy	failure	Error type Parser.Error	1
+#	TODO: make the occurrence number correct after adding error recovery
+parse	tests/task_4_3_sample_2.sy	failure	Error type Parser.Error	1
