@@ -9,7 +9,7 @@ dune:
 
 .PHONY: run
 run: dune
-	dune exec exp_4 $(MAINARGS)
+	dune exec -- exp_4 $(MAINARGS)
 
 .PHONY: clean
 clean:

@@ -2,7 +2,7 @@
 
 (menhir
  (modules parser)
- (flags --dump)
+ (flags --trace)
  (infer true))
 
 (executable

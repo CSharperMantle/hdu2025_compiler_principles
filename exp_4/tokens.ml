@@ -2,6 +2,7 @@ open Parser
 
 let name_of = function
   | INT -> "INT"
+  | FLOAT -> "FLOAT"
   | VOID -> "VOID"
   | CONST -> "CONST"
   | IF -> "IF"
@@ -51,6 +52,7 @@ let keywords =
     [
       ("const", CONST);
       ("int", INT);
+      ("float", FLOAT);
       ("void", VOID);
       ("if", IF);
       ("else", ELSE);
