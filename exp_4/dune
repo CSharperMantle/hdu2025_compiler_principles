@@ -2,7 +2,13 @@
 
 (menhir
   (modules parser)
-  (flags --strict)
+  (flags
+    --comment
+    --strict
+    --no-dollars
+    --reference-graph
+    --random-seed=0x0d000721)
+  (explain true)
   (infer true))
 
 (executable

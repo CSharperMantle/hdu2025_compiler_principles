@@ -22,7 +22,9 @@ let parse_file filename =
   try
     let comp_unit = Parser.comp_unit Lexer.token lexbuf in
     close_in ic;
-    Ast.comp_unit_to_string 0 comp_unit |> print_endline
+    Ast.prettify_comp_unit comp_unit
+    |> List.fold_left (fun acc l -> acc ^ l ^ "\n") ""
+    |> print_endline
   with
   | Lexer.Lexing_error msg ->
       close_in ic;
