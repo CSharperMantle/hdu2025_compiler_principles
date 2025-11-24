@@ -6,3 +6,6 @@ lex	tests/test_lexer_bad_int_lit_2.sy	failure	Error type Lexer.Lexing_error
 lex	tests/test_lexer_bad_int_lit_3.sy	failure	Error type Lexer.Lexing_error
 parse	tests/test_parser_array_1.sy	success	
 parse	tests/test_parser_array_2.sy	success	
+parse	tests/task_4_3_sample_2_single_err_1.sy	failure	Error type Parser.Error
+parse	tests/task_4_3_sample_2_single_err_2.sy	failure	Error type Parser.Error
+parse	tests/task_4_3_sample_2.sy	failure	Error type Parser.Error
