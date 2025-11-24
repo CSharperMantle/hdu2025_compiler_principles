@@ -1,5 +1,5 @@
 int main()
 {
-  int i = 0x0;
+  int i = 0999;
   int j = 0x0ZZ;
 }

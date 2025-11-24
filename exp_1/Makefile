@@ -29,6 +29,10 @@ link: sample
 run: link
 	./sample
 
+.PHONY: test
+test:
+	@echo 'No tests are defined for this experiment'
+
 .PHONY: clean
 clean:
 	rm -f sample sample.o sample.s sample.i

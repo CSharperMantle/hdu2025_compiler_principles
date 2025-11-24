@@ -17,6 +17,10 @@ run: exp_3
 dune:
 	dune build
 
+.PHONY: test
+test:
+	@echo 'No tests are defined for this experiment'
+
 .PHONY: clean
 clean:
 	rm -f exp_3 *.cm? *.o

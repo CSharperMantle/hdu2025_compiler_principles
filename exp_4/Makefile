@@ -11,6 +11,10 @@ dune:
 run: dune
 	dune exec -- exp_4 $(MAINARGS)
 
+.PHONY: test
+test: dune
+	scripts/run_tests.sh tests/testlist.tsv
+
 .PHONY: clean
 clean:
 	dune clean

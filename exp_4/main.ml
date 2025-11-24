@@ -13,7 +13,8 @@ let lex_file filename =
       tokens
   with Lexer.Lexing_error msg ->
     close_in ic;
-    Printf.eprintf "Error type A at %s:%s\n" filename msg
+    Printf.eprintf "Error type Lexer.Lexing_error at %s:%s\n" filename msg;
+    exit 1
 
 let parse_file filename =
   let ic = open_in filename in
@@ -28,20 +29,22 @@ let parse_file filename =
   with
   | Lexer.Lexing_error msg ->
       close_in ic;
-      Printf.eprintf "Error type A at %s:%s\n" filename msg
+      Printf.eprintf "Error type Lexer.Lexing_error at %s:%s\n" filename msg;
+      exit 1
   | Parser.Error ->
       close_in ic;
       let pos = Lexing.lexeme_start_p lexbuf in
-      Printf.eprintf "Error type B at %s:%d:%d\n" filename pos.pos_lnum
-        (pos.pos_cnum - pos.pos_bol + 1)
+      Printf.eprintf "Error type Parser.Error at %s:%d:%d\n" filename pos.pos_lnum
+        (pos.pos_cnum - pos.pos_bol + 1);
+      exit 1
 
 let usage () =
-  Printf.eprintf "usage: %s <--lex|--parse> <source-file>\n" Sys.argv.(0);
+  Printf.eprintf "usage: %s <lex|parse> <source-file>\n" Sys.argv.(0);
   exit 1
 
 let () =
   if Array.length Sys.argv < 3 then usage ();
   let cmd = String.trim Sys.argv.(1) in
-  if cmd = "--lex" then lex_file Sys.argv.(2)
-  else if cmd = "--parse" then parse_file Sys.argv.(2)
+  if cmd = "lex" then lex_file Sys.argv.(2)
+  else if cmd = "parse" then parse_file Sys.argv.(2)
   else usage ()

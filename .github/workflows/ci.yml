@@ -29,3 +29,6 @@ jobs:
     - name: Build
       run: |
         opam exec -- make -j $(nproc) all
+    - name: Test
+      run: |
+        opam exec -- make test
