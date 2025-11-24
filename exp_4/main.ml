@@ -9,7 +9,7 @@ let lex_file filename =
       (fun tok ->
         match tok with
         | Parser.EOF -> ()
-        | _ -> print_endline (Tokens.token_to_string tok))
+        | _ -> Tokens.token_to_string tok |> print_endline)
       tokens
   with Lexer.Lexing_error msg ->
     close_in ic;
@@ -19,11 +19,10 @@ let parse_file filename =
   let ic = open_in filename in
   let lexbuf = Lexing.from_channel ic in
   lexbuf.lex_curr_p <- { lexbuf.lex_curr_p with pos_fname = filename };
-  let _ = Parsing.set_trace true in
   try
-    let ast = Parser.comp_unit Lexer.token lexbuf in
+    let comp_unit = Parser.comp_unit Lexer.token lexbuf in
     close_in ic;
-    Ast.print_ast_indent 0 ast
+    Ast.comp_unit_to_string 0 comp_unit |> print_endline
   with
   | Lexer.Lexing_error msg ->
       close_in ic;
@@ -35,8 +34,7 @@ let parse_file filename =
         (pos.pos_cnum - pos.pos_bol + 1)
 
 let usage () =
-  Printf.eprintf "usage: %s --lex <source-file>\n" Sys.argv.(0);
-  Printf.eprintf "       %s --parse <source-file>\n" Sys.argv.(0);
+  Printf.eprintf "usage: %s <--lex|--parse> <source-file>\n" Sys.argv.(0);
   exit 1
 
 let () =
