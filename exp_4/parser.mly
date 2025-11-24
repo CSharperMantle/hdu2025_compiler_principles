@@ -117,21 +117,24 @@ init_val:
   ;
 
 func_def:
-  | t = func_type name = ID "(" params = separated_list(",", func_f_param) ")" body = block
+  | t = b_type name = ID "(" params = separated_list(",", func_f_param) ")" body = block
     {
       {
-        Ast.func_ret_type = t;
+        Ast.func_ret_type = Some t;
         func_name = name;
         func_params = params;
         func_body = body
       }
     }
-  ;
-
-func_type:
-  | "void"  { Ast.Void }
-  | "int"   { Ast.IntFunc }
-  | "float" { Ast.FloatFunc }
+  | "void" name = ID "(" params = separated_list(",", func_f_param) ")" body = block
+    {
+      {
+        Ast.func_ret_type = None;
+        func_name = name;
+        func_params = params;
+        func_body = body
+      }
+    }
   ;
 
 func_f_param:

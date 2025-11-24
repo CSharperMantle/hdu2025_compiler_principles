@@ -74,13 +74,8 @@ and decl =
   | ConstDecl of b_type * const_def list
   | VarDecl of b_type * var_def list
 
-type func_type =
-  | Void
-  | IntFunc
-  | FloatFunc
-
 type func_def = {
-  func_ret_type : func_type;
+  func_ret_type : b_type option;
   func_name : string;
   func_params : func_param list;
   func_body : block_item list;
@@ -150,19 +145,18 @@ and print_func_def indent func =
   List.iter (print_block_item (indent + 2)) func.func_body
 
 and print_func_type indent = function
-  | Void -> Printf.printf "%sVoid\n" (String.make indent ' ')
-  | IntFunc -> Printf.printf "%sInt\n" (String.make indent ' ')
-  | FloatFunc -> Printf.printf "%sFloat\n" (String.make indent ' ')
+  | None -> Printf.printf "%sVoid\n" (String.make indent ' ')
+  | Some Int -> Printf.printf "%sInt\n" (String.make indent ' ')
+  | Some Float -> Printf.printf "%sFloat\n" (String.make indent ' ')
 
 and print_func_param indent param =
   Printf.printf "%sFuncParam\n" (String.make indent ' ');
   print_b_type (indent + 2) param.param_type;
   Printf.printf "%s%s\n" (String.make (indent + 2) ' ') param.param_name;
   match param.param_dims with
-  | Some dims -> (
-    Printf.printf "%sArray\n" (String.make (indent + 2) ' ');
-    List.iter (print_exp (indent + 2)) dims;
-  )
+  | Some dims ->
+      Printf.printf "%sArray\n" (String.make (indent + 2) ' ');
+      List.iter (print_exp (indent + 2)) dims
   | None -> ()
 
 and print_block_item indent = function
@@ -214,12 +208,12 @@ and print_exp indent = function
       Printf.printf "%sCall %s\n" (String.make indent ' ') name;
       List.iter (print_exp (indent + 2)) args
 
-and string_of_unary_op = function
+let string_of_unary_op = function
   | Pos -> "+"
   | Neg -> "-"
   | Not -> "!"
 
-and string_of_bin_op = function
+let string_of_bin_op = function
   | Add -> "+"
   | Sub -> "-"
   | Mul -> "*"
