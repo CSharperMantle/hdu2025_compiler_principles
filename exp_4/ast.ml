@@ -23,6 +23,26 @@ type bin_op =
   | And
   | Or
 
+let string_of_unary_op = function
+  | Pos -> "+"
+  | Neg -> "-"
+  | Not -> "!"
+
+let string_of_bin_op = function
+  | Add -> "+"
+  | Sub -> "-"
+  | Mul -> "*"
+  | Div -> "/"
+  | Mod -> "%"
+  | Lt -> "<"
+  | Gt -> ">"
+  | Leq -> "<="
+  | Geq -> ">="
+  | Eq -> "=="
+  | Neq -> "!="
+  | And -> "&&"
+  | Or -> "||"
+
 type exp =
   | IntLit of int
   | Var of string * exp list (* (id, array indices) *)
@@ -207,23 +227,3 @@ and print_exp indent = function
   | Call (name, args) ->
       Printf.printf "%sCall %s\n" (String.make indent ' ') name;
       List.iter (print_exp (indent + 2)) args
-
-let string_of_unary_op = function
-  | Pos -> "+"
-  | Neg -> "-"
-  | Not -> "!"
-
-let string_of_bin_op = function
-  | Add -> "+"
-  | Sub -> "-"
-  | Mul -> "*"
-  | Div -> "/"
-  | Mod -> "%"
-  | Lt -> "<"
-  | Gt -> ">"
-  | Leq -> "<="
-  | Geq -> ">="
-  | Eq -> "=="
-  | Neq -> "!="
-  | And -> "&&"
-  | Or -> "||"

@@ -42,32 +42,26 @@ open Ast
 %nonassoc LOWER_THAN_ELSE
 %nonassoc ELSE
 
-%left OR
-%left AND
-%left EQ NEQ
-%left LESS LEQ GREATER GEQ
-%left PLUS MINUS
-%left MULT DIV MOD
-%right NOT
-
-%start <Ast.comp_unit> comp_unit
+%start <comp_unit> comp_unit
 
 %%
 
 %inline array_dim:
-  | "[" e = const_exp "]" { e }
+  | "["; e = const_exp; "]"
+    { e }
   ;
 %inline array_acc:
-  | "[" e = exp "]" { e }
+  | "["; e = exp; "]"
+    { e }
   ;
 
 comp_unit:
-  | items = comp_unit_item* "$" { items }
+  | items = comp_unit_item*; "$" { items }
   ;
 
 comp_unit_item:
-  | d = decl     { Ast.DeclItem d }
-  | f = func_def { Ast.FuncDefItem f }
+  | d = decl     { DeclItem d }
+  | f = func_def { FuncDefItem f }
   ;
 
 decl:
@@ -76,118 +70,89 @@ decl:
   ;
 
 const_decl:
-  | "const" t = b_type defs = separated_nonempty_list(",", const_def) ";"
-    { Ast.ConstDecl (t, defs) }
+  | "const"; t = b_type; defs = separated_nonempty_list(",", const_def); ";"
+    { ConstDecl (t, defs) }
   ;
 
 b_type:
-  | "int"   { Ast.Int }
-  | "float" { Ast.Float }
+  | "int"   { Int }
+  | "float" { Float }
   ;
 
 const_def:
-  | name = ID dims = list(array_dim) "=" init = const_init_val
-    { { Ast.const_name = name; const_dims = dims; const_init = init } }
+  | name = ID; dims = list(array_dim); "="; init = const_init_val
+    { { const_name = name; const_dims = dims; const_init = init } }
   ;
 
 const_init_val:
   | e = const_exp
-    { Ast.ConstExp e }
-  | "{" vals = separated_list(",", const_init_val) "}"
-    { Ast.ConstArray vals }
+    { ConstExp e }
+  | "{"; vals = separated_list(",", const_init_val); "}"
+    { ConstArray vals }
   ;
 
 var_decl:
-  | t = b_type first = var_def rest = preceded(",", var_def)* ";"
-    { Ast.VarDecl (t, first :: rest) }
+  | t = b_type; first = var_def; rest = preceded(",", var_def)*; ";"
+    { VarDecl (t, first :: rest) }
   ;
 
 var_def:
-  | name = ID dims = list(array_dim)
-    { { Ast.var_name = name; var_dims = dims; var_init = None } }
-  | name = ID dims = list(array_dim) "=" init = init_val
-    { { Ast.var_name = name; var_dims = dims; var_init = Some init } }
+  | name = ID; dims = list(array_dim)
+    { { var_name = name; var_dims = dims; var_init = None } }
+  | name = ID; dims = list(array_dim); "="; init = init_val
+    { { var_name = name; var_dims = dims; var_init = Some init } }
   ;
 
 init_val:
   | e = exp
-    { Ast.InitExp e }
-  | "{" vals = separated_list(",", init_val) "}"
-    { Ast.InitArray vals }
+    { InitExp e }
+  | "{"; vals = separated_list(",", init_val); "}"
+    { InitArray vals }
   ;
 
 func_def:
-  | t = b_type name = ID "(" params = separated_list(",", func_f_param) ")" body = block
-    {
-      {
-        Ast.func_ret_type = Some t;
-        func_name = name;
-        func_params = params;
-        func_body = body
-      }
-    }
-  | "void" name = ID "(" params = separated_list(",", func_f_param) ")" body = block
-    {
-      {
-        Ast.func_ret_type = None;
-        func_name = name;
-        func_params = params;
-        func_body = body
-      }
-    }
+  | t = b_type; name = ID; "("; params = separated_list(",", func_f_param); ")"; body = block
+    { { func_ret_type = Some t; func_name = name; func_params = params; func_body = body } }
+  | "void"; name = ID; "("; params = separated_list(",", func_f_param); ")"; body = block
+    { { func_ret_type = None; func_name = name; func_params = params; func_body = body } }
   ;
 
 func_f_param:
-  | t = b_type name = ID
-    {
-      {
-        Ast.param_type = t;
-        param_name = name;
-        param_dims = None
-      }
-    }
-  | t = b_type name = ID "[" "]" dims = list(array_acc)
-    {
-      {
-        Ast.param_type = t;
-        param_name = name;
-        param_dims = Some(dims)
-      }
-    }
+  | t = b_type; name = ID
+    { { param_type = t; param_name = name; param_dims = None } }
+  | t = b_type; name = ID; "["; "]"; dims = list(array_acc)
+    { { param_type = t; param_name = name; param_dims = Some dims } }
   ;
 
 block:
-  | "{" items = list(block_item) "}" { items }
+  | "{"; items = list(block_item); "}"
+    { items }
   ;
 
 block_item:
-  | d = decl { Ast.Decl d }
-  | s = stmt { Ast.Stmt s }
-  ;
-
-%inline stmt_exp_else:
-  | "else" s = stmt { s }
+  | d = decl { Decl d }
+  | s = stmt { Stmt s }
   ;
 
 stmt:
-  | name = ID indices = list(array_acc) "=" e = exp ";"
-    { Ast.Assign (name, indices, e) }
-  | e = exp? ";"
-    { Ast.ExprStmt e }
+  | name = ID; indices = list(array_acc); "="; e = exp; ";"
+    { Assign (name, indices, e) }
+  | e = exp?; ";"
+    { ExprStmt e }
   | b = block
-    { Ast.Block b }
-  | "if" "(" c = cond ")" then_s = stmt %prec LOWER_THAN_ELSE
-    { Ast.If (c, then_s, None) }
-  | "if" "(" c = cond ")" then_s = stmt "else" else_s = stmt
-    { Ast.If (c, then_s, Some else_s) }
-  | "while" "(" c = cond ")" s = stmt
-    { Ast.While (c, s) }
-  | "break" ";"
-    { Ast.Break }
-  | "continue" ";"
-    { Ast.Continue }
-  | "return" e = exp? ";"
-    { Ast.Return e }
+    { Block b }
+  | "if"; "("; c = cond; ")"; then_s = stmt; %prec LOWER_THAN_ELSE
+    { If (c, then_s, None) }
+  | "if"; "("; c = cond; ")"; then_s = stmt; "else"; else_s = stmt
+    { If (c, then_s, Some else_s) }
+  | "while"; "("; c = cond; ")"; s = stmt
+    { While (c, s) }
+  | "break"; ";"
+    { Break }
+  | "continue"; ";"
+    { Continue }
+  | "return"; e = exp?; ";"
+    { Return e }
   ;
 
 exp:
@@ -199,36 +164,36 @@ cond:
   ;
 
 lval:
-  | name = ID indices = list(array_acc)
+  | name = ID; indices = list(array_acc)
     { (name, indices) }
   ;
 
 primary_exp:
-  | "(" e = exp ")"
+  | "("; e = exp; ")"
     { e }
   | lv = lval
-    { let (name, indices) = lv in Ast.Var (name, indices) }
+    { let (name, indices) = lv in Var (name, indices) }
   | n = number
     { n }
   ;
 
 number:
-  | n = INT_LIT { Ast.IntLit n }
+  | n = INT_LIT { IntLit n }
   ;
 
 unary_exp:
   | e = primary_exp
     { e }
-  | name = ID "(" args = func_r_params? ")"
-    { Ast.Call (name, Option.value args ~default:[]) }
-  | op = unary_op e = unary_exp
-    { Ast.Unary (op, e) }
+  | name = ID; "("; args = func_r_params?; ")"
+    { Call (name, Option.value args ~default:[]) }
+  | op = unary_op; e = unary_exp
+    { Unary (op, e) }
   ;
 
 unary_op:
-  | "+" { Ast.Pos }
-  | "-" { Ast.Neg }
-  | "!" { Ast.Not }
+  | "+" { Pos }
+  | "-" { Neg }
+  | "!" { Not }
   ;
 
 func_r_params:
@@ -236,68 +201,68 @@ func_r_params:
   ;
 
 %inline mul_op:
-  | "*" { Ast.Mul }
-  | "/" { Ast.Div }
-  | "%" { Ast.Mod }
+  | "*" { Mul }
+  | "/" { Div }
+  | "%" { Mod }
   ;
 
 mul_exp:
   | e = unary_exp
     { e }
-  | e1 = mul_exp op = mul_op e2 = unary_exp
-    { Ast.Binary (op, e1, e2) }
+  | e1 = mul_exp; op = mul_op; e2 = unary_exp
+    { Binary (op, e1, e2) }
   ;
 
 %inline add_op:
-  | "+" { Ast.Add }
-  | "-" { Ast.Sub }
+  | "+" { Add }
+  | "-" { Sub }
   ;
 
 add_exp:
   | e = mul_exp
     { e }
-  | e1 = add_exp op = add_op e2 = mul_exp
-    { Ast.Binary (op, e1, e2) }
+  | e1 = add_exp; op = add_op; e2 = mul_exp
+    { Binary (op, e1, e2) }
   ;
 
 %inline rel_op:
-  | "<"  { Ast.Lt }
-  | ">"  { Ast.Gt }
-  | "<=" { Ast.Leq }
-  | ">=" { Ast.Geq }
+  | "<"  { Lt }
+  | ">"  { Gt }
+  | "<=" { Leq }
+  | ">=" { Geq }
   ;
 
 rel_exp:
   | e = add_exp
     { e }
-  | e1 = rel_exp op = rel_op e2 = add_exp
-    { Ast.Binary (op, e1, e2) }
+  | e1 = rel_exp; op = rel_op; e2 = add_exp
+    { Binary (op, e1, e2) }
   ;
 
 %inline eq_op:
-  | "==" { Ast.Eq }
-  | "!=" { Ast.Neq }
+  | "==" { Eq }
+  | "!=" { Neq }
   ;
 
 eq_exp:
   | e = rel_exp
     { e }
-  | e1 = eq_exp op = eq_op e2 = rel_exp
-    { Ast.Binary (op, e1, e2) }
+  | e1 = eq_exp; op = eq_op; e2 = rel_exp
+    { Binary (op, e1, e2) }
   ;
 
 l_and_exp:
   | e = eq_exp
     { e }
-  | e1 = l_and_exp "&&" e2 = eq_exp
-    { Ast.Binary (Ast.And, e1, e2) }
+  | e1 = l_and_exp; "&&"; e2 = eq_exp
+    { Binary (And, e1, e2) }
   ;
 
 l_or_exp:
   | e = l_and_exp
     { e }
-  | e1 = l_or_exp "||" e2 = l_and_exp
-    { Ast.Binary (Ast.Or, e1, e2) }
+  | e1 = l_or_exp; "||"; e2 = l_and_exp
+    { Binary (Or, e1, e2) }
   ;
 
 const_exp:
