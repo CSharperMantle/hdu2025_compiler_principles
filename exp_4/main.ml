@@ -8,7 +8,7 @@ let lex_file filename =
     List.iter
       (fun tok ->
         match tok with
-        | Tokens.TokenEof -> ()
+        | Parser.EOF -> ()
         | _ -> print_endline (Tokens.token_to_string tok))
       tokens
   with Lexer.Lexing_error msg ->

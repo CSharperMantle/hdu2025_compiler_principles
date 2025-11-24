@@ -1,7 +1,14 @@
 (ocamllex lexer)
 
+(menhir
+ (modules parser)
+ (flags --dump)
+ (infer true))
+
 (executable
  (name main)
  (public_name exp_4)
- (modules tokens lexer main)
- (modes native))
+ (modules tokens ast lexer parser main)
+ (modes native)
+ (flags (:standard -warn-error -32 -warn-error -33))
+ (ocamlopt_flags (:standard -g)))

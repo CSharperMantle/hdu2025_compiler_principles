@@ -1,5 +1,7 @@
 {
+open Parser
 open Tokens
+
 exception Lexing_error of string
 
 let get_pos lexbuf =
@@ -26,47 +28,47 @@ rule token = parse
   | identifier as id {
     match StringMap.find_opt id keywords with
       | Some tok -> tok
-      | None -> TokenId id
+      | None -> ID id
   }
   | dec_or_oct as n {
     if String.starts_with ~prefix:"0" n && String.length n > 1 then
       match int_of_string_opt ("0o" ^ n) with
-      | Some v -> TokenIntLit v
+      | Some v -> INT_LIT v
       | None -> raise_error (Format.sprintf "Bad octal literal: %s" n) lexbuf
     else
       match int_of_string_opt ("0u" ^ n) with
-      | Some v -> TokenIntLit v
+      | Some v -> INT_LIT v
       | None -> raise_error (Format.sprintf "Bad decimal literal: %s" n) lexbuf
   }
   | hex as n {
     match int_of_string_opt n with
-    | Some v -> TokenIntLit v
+    | Some v -> INT_LIT v
     | None -> raise_error (Format.sprintf "Bad hexadecimal literal: %s" n) lexbuf
   }
-  | "+"              { TokenPlus }
-  | "-"              { TokenMinus }
-  | "*"              { TokenMult }
-  | "/"              { TokenDiv }
-  | "%"              { TokenMod }
-  | "=="             { TokenEq }
-  | "!="             { TokenNeq }
-  | "<="             { TokenLeq }
-  | ">="             { TokenGeq }
-  | "<"              { TokenLess }
-  | ">"              { TokenGreater }
-  | "&&"             { TokenAnd }
-  | "||"             { TokenOr }
-  | "!"              { TokenNot }
-  | "="              { TokenAssign }
-  | ";"              { TokenSemicolon }
-  | ","              { TokenComma }
-  | "("              { TokenLParen }
-  | ")"              { TokenRParen }
-  | "["              { TokenLBracket }
-  | "]"              { TokenRBracket }
-  | "{"              { TokenLBrace }
-  | "}"              { TokenRBrace }
-  | eof              { TokenEof }
+  | "+"              { PLUS }
+  | "-"              { MINUS }
+  | "*"              { MULT }
+  | "/"              { DIV }
+  | "%"              { MOD }
+  | "=="             { EQ }
+  | "!="             { NEQ }
+  | "<="             { LEQ }
+  | ">="             { GEQ }
+  | "<"              { LESS }
+  | ">"              { GREATER }
+  | "&&"             { AND }
+  | "||"             { OR }
+  | "!"              { NOT }
+  | "="              { ASSIGN }
+  | ";"              { SEMICOLON }
+  | ","              { COMMA }
+  | "("              { LPAREN }
+  | ")"              { RPAREN }
+  | "["              { LBRACKET }
+  | "]"              { RBRACKET }
+  | "{"              { LBRACE }
+  | "}"              { RBRACE }
+  | eof              { EOF }
   | _ as c           { raise_error (Format.sprintf "Unexpected char: %c" c) lexbuf }
 
 and block_comment = parse
@@ -79,7 +81,7 @@ let get_all_tokens lexbuf =
   let rec aux acc =
     let tok = token lexbuf in
     match tok with
-    | TokenEof -> List.rev (TokenEof :: acc)
+    | EOF -> List.rev (EOF :: acc)
     | _ -> aux (tok :: acc)
   in
   aux []
