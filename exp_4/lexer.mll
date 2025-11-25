@@ -1,16 +1,12 @@
 {
 open Parser
 open Tokens
+open Util
 
-exception Lexing_error of int * int * string
-
-let get_pos lexbuf =
-  let pos = Lexing.lexeme_start_p lexbuf in
-  (pos.pos_lnum, pos.pos_cnum - pos.pos_bol + 1)
+exception Lexing_error of source_location * string
 
 let raise_error (message : string) lexbuf =
-  let (lineno, colno) = get_pos lexbuf in
-  raise (Lexing_error (lineno, colno, message))
+  raise (Lexing_error (split_position (Lexing.lexeme_start_p lexbuf), message))
 }
 
 let whitespace = [' ' '\t' '\r' '\n']
