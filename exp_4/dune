@@ -3,6 +3,7 @@
 (menhir
   (modules parser)
   (flags
+    --table
     --comment
     --strict
     --no-dollars
@@ -14,6 +15,7 @@
 (executable
   (name main)
   (public_name exp_4)
+  (libraries menhirLib)
   (modules tokens ast lexer parser main)
   (modes native)
   (flags (:standard

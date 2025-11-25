@@ -2,7 +2,7 @@
 open Parser
 open Tokens
 
-exception Lexing_error of string
+exception Lexing_error of int * int * string
 
 let get_pos lexbuf =
   let pos = Lexing.lexeme_start_p lexbuf in
@@ -10,7 +10,7 @@ let get_pos lexbuf =
 
 let raise_error (message : string) lexbuf =
   let (lineno, colno) = get_pos lexbuf in
-  raise (Lexing_error (Format.sprintf "%d:%d: %s" lineno colno message))
+  raise (Lexing_error (lineno, colno, message))
 }
 
 let whitespace = [' ' '\t' '\r' '\n']
