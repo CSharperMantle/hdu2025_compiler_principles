@@ -81,7 +81,8 @@ let parse_file filename =
           (fun (loc, msg) ->
             Printf.eprintf "Error type parsing_error at %s:%d:%d: %s\n" filename loc.lineno
               loc.colno msg)
-          errors
+          errors;
+        exit 1
     | Ok comp_unit ->
         Ast.prettify_comp_unit comp_unit
         |> List.fold_left (fun acc l -> acc ^ l ^ "\n") ""

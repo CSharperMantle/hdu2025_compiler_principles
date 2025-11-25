@@ -9,7 +9,7 @@ let raise_error (message : string) lexbuf =
   raise (Lexing_error (split_position (Lexing.lexeme_start_p lexbuf), message))
 }
 
-let whitespace = [' ' '\t' '\r' '\n']
+let whitespace = [' ' '\t' '\r']
 let digit = ['0'-'9']
 let hex_digit = ['0'-'9' 'a'-'f' 'A'-'F']
 let letter = ['a'-'z' 'A'-'Z']
@@ -19,6 +19,7 @@ let hex = "0x" hex_digit*
 
 rule token = parse
   | whitespace+      { token lexbuf }
+  | '\n'             { Lexing.new_line lexbuf; token lexbuf }
   | "//" [^ '\n']*   { token lexbuf }
   | "/*"             { block_comment lexbuf }
   | identifier as id {
@@ -69,6 +70,7 @@ rule token = parse
 
 and block_comment = parse
   | "*/"             { token lexbuf }
+  | '\n'             { Lexing.new_line lexbuf; block_comment lexbuf }
   | eof              { raise_error "Unterminated block comment" lexbuf }
   | _                { block_comment lexbuf }
 
