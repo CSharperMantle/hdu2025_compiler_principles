@@ -47,7 +47,7 @@ while IFS="$(printf '\t')" read -r mode input_file expected_status expected_msg 
                     if [ "$count" -eq "$occurrence" ]; then
                         passed=1
                     else
-                        reason="Expected error message '$expected_msg' to occur $occurrence times, found $count times"
+                        reason="Expected error message '$expected_msg' to occur $occurrence times, found $count"
                     fi
                 elif echo "$output" | grep -q "$expected_msg"; then
                     passed=1
@@ -69,9 +69,9 @@ while IFS="$(printf '\t')" read -r mode input_file expected_status expected_msg 
         printf "${GREEN}[PASS]${RESET_COLOR} %s - %s\n" "$mode" "$input_file"
     else
         printf "${RED}[FAIL]${RESET_COLOR} %s - %s\n" "$mode" "$input_file"
-        echo "       Reason: $reason"
+        echo "  Reason: $reason"
         if [ "$expected_status" = "success" ]; then
-             echo "       Output: $output"
+             echo "  Output: $output"
         fi
     fi
 done < "$spec_file"

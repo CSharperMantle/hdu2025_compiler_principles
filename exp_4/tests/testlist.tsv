@@ -9,4 +9,4 @@ parse	tests/test_parser_array_2.sy	success
 parse	tests/task_4_3_sample_2_single_err_1.sy	failure	Error type Parser.Error	1
 parse	tests/task_4_3_sample_2_single_err_2.sy	failure	Error type Parser.Error	1
 #	TODO: make the occurrence number correct after adding error recovery
-parse	tests/task_4_3_sample_2.sy	failure	Error type Parser.Error	1
+parse	tests/task_4_3_sample_2.sy	failure	Error type Parser.Error	2
