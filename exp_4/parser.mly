@@ -39,6 +39,14 @@ open Ast
 %token RBRACE       "}"
 %token EOF          "$"
 
+%left OR
+%left AND
+%left EQ NEQ
+%left LESS LEQ GREATER GEQ
+%left PLUS MINUS
+%left MULT DIV MOD
+%nonassoc NOT UPLUS UMINUS
+
 %nonassoc LOWER_THAN_ELSE
 %nonassoc ELSE
 
@@ -156,11 +164,50 @@ stmt:
   ;
 
 exp:
-  | e = add_exp { e }
+  | n = INT_LIT
+    { IntLit n }
+  | lv = lval
+    { let (name, indices) = lv in Var (name, indices) }
+  | "("; e = exp; ")"
+    { e }
+  | name = ID; "("; args = separated_list(",", exp); ")"
+    { Call (name, args) }
+  | "+"; e = exp %prec UPLUS
+    { Unary (Pos, e) }
+  | "-"; e = exp %prec UMINUS
+    { Unary (Neg, e) }
+  | "!"; e = exp %prec NOT
+    { Unary (Not, e) }
+  | e1 = exp; "+"; e2 = exp
+    { Binary (Add, e1, e2) }
+  | e1 = exp; "-"; e2 = exp
+    { Binary (Sub, e1, e2) }
+  | e1 = exp; "*"; e2 = exp
+    { Binary (Mul, e1, e2) }
+  | e1 = exp; "/"; e2 = exp
+    { Binary (Div, e1, e2) }
+  | e1 = exp; "%"; e2 = exp
+    { Binary (Mod, e1, e2) }
+  | e1 = exp; "<"; e2 = exp
+    { Binary (Lt, e1, e2) }
+  | e1 = exp; "<="; e2 = exp
+    { Binary (Leq, e1, e2) }
+  | e1 = exp; ">"; e2 = exp
+    { Binary (Gt, e1, e2) }
+  | e1 = exp; ">="; e2 = exp
+    { Binary (Geq, e1, e2) }
+  | e1 = exp; "=="; e2 = exp
+    { Binary (Eq, e1, e2) }
+  | e1 = exp; "!="; e2 = exp
+    { Binary (Neq, e1, e2) }
+  | e1 = exp; "&&"; e2 = exp
+    { Binary (And, e1, e2) }
+  | e1 = exp; "||"; e2 = exp
+    { Binary (Or, e1, e2) }
   ;
 
 cond:
-  | e = l_or_exp { e }
+  | e = exp { e }
   ;
 
 lval:
@@ -168,103 +215,6 @@ lval:
     { (name, indices) }
   ;
 
-primary_exp:
-  | "("; e = exp; ")"
-    { e }
-  | lv = lval
-    { let (name, indices) = lv in Var (name, indices) }
-  | n = number
-    { n }
-  ;
-
-number:
-  | n = INT_LIT { IntLit n }
-  ;
-
-unary_exp:
-  | e = primary_exp
-    { e }
-  | name = ID; "("; args = func_r_params?; ")"
-    { Call (name, Option.value args ~default:[]) }
-  | op = unary_op; e = unary_exp
-    { Unary (op, e) }
-  ;
-
-unary_op:
-  | "+" { Pos }
-  | "-" { Neg }
-  | "!" { Not }
-  ;
-
-func_r_params:
-  | args = separated_nonempty_list(",", exp) { args }
-  ;
-
-%inline mul_op:
-  | "*" { Mul }
-  | "/" { Div }
-  | "%" { Mod }
-  ;
-
-mul_exp:
-  | e = unary_exp
-    { e }
-  | e1 = mul_exp; op = mul_op; e2 = unary_exp
-    { Binary (op, e1, e2) }
-  ;
-
-%inline add_op:
-  | "+" { Add }
-  | "-" { Sub }
-  ;
-
-add_exp:
-  | e = mul_exp
-    { e }
-  | e1 = add_exp; op = add_op; e2 = mul_exp
-    { Binary (op, e1, e2) }
-  ;
-
-%inline rel_op:
-  | "<"  { Lt }
-  | ">"  { Gt }
-  | "<=" { Leq }
-  | ">=" { Geq }
-  ;
-
-rel_exp:
-  | e = add_exp
-    { e }
-  | e1 = rel_exp; op = rel_op; e2 = add_exp
-    { Binary (op, e1, e2) }
-  ;
-
-%inline eq_op:
-  | "==" { Eq }
-  | "!=" { Neq }
-  ;
-
-eq_exp:
-  | e = rel_exp
-    { e }
-  | e1 = eq_exp; op = eq_op; e2 = rel_exp
-    { Binary (op, e1, e2) }
-  ;
-
-l_and_exp:
-  | e = eq_exp
-    { e }
-  | e1 = l_and_exp; "&&"; e2 = eq_exp
-    { Binary (And, e1, e2) }
-  ;
-
-l_or_exp:
-  | e = l_and_exp
-    { e }
-  | e1 = l_or_exp; "||"; e2 = l_and_exp
-    { Binary (Or, e1, e2) }
-  ;
-
 const_exp:
-  | e = add_exp { e }
+  | e = exp { e } (* Note: all identifiers must be constant. *)
   ;
