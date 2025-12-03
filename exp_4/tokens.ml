@@ -1,3 +1,4 @@
+open Common
 open Parser
 
 let name_of = function
@@ -44,8 +45,6 @@ let token_to_string (token : token) =
   | ID id -> Format.sprintf "%s %s" token_name id
   | INT_LIT n -> Format.sprintf "%s %d" token_name n
   | _ -> token_name
-
-module StringMap = Map.Make (String)
 
 let keywords =
   StringMap.of_list
