@@ -13,3 +13,5 @@ parse	tests/test_parser_unary_neg.sy	success
 typecheck	tests/test_parser_unary_neg.sy	success		
 typecheck	tests/test_typecheck_bad_id_1.sy	failure	Error type semant_error	1
 typecheck	tests/test_typecheck_bad_id_2.sy	failure	Error type semant_error	1
+typecheck	tests/test_typecheck_bad_return_1.sy	failure	Error type semant_error	1
+typecheck	tests/test_typecheck_bad_return_2.sy	failure	Error type semant_error	1
