@@ -42,9 +42,9 @@ let parse (lexbuf : Lexing.lexbuf) : (Ast.comp_unit, parsing_error list) result 
           | Some env' -> find_accepting_state env')
       | ckpt' -> Ok ckpt'
     in
-    match find_accepting_state env with
-    | Ok ckpt -> Ok (ckpt, base_error)
-    | Error sub_err -> Error [ base_error; sub_err ]
+    find_accepting_state env
+    |> Result.map (fun ckpt -> (ckpt, base_error))
+    |> Result.map_error (fun sub_err -> [ base_error; sub_err ])
   in
   let rec iterate errors checkpoint =
     match checkpoint with
