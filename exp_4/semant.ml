@@ -18,7 +18,7 @@ let b_type_from_ast_func = function
 
 type sem_type = {
   elem_ty : b_type;
-  dims : int list; (* When this is [], then it's a scalar. Otherwise it's an array. *)
+  dims : int list;
 }
 
 type name_entry =

@@ -49,7 +49,7 @@ let bin_op_to_string = function
 
 type exp =
   | IntLit of int
-  | Var of string * exp list (* (id, array indices) *)
+  | Var of string * exp list
   | Unary of unary_op * exp
   | Binary of bin_op * exp * exp
   | Call of string * exp list
@@ -64,24 +64,24 @@ type init_val =
 
 type const_def = {
   const_name : string;
-  const_dims : exp list; (* When this is [], then it's a scalar. Otherwise it's an array. *)
+  const_dims : exp list;
   const_init : const_init_val;
 }
 
 type var_def = {
   var_name : string;
-  var_dims : exp list; (* When this is [], then it's a scalar. Otherwise it's an array. *)
+  var_dims : exp list;
   var_init : init_val option;
 }
 
 type func_param = {
   param_type : b_type;
   param_name : string;
-  param_dims : exp list option; (* When this is None, then it's a scalar. Otherwise it's an array. *)
+  param_dims : exp list option;
 }
 
 type stmt =
-  | Assign of string * exp list * exp (* lval, indices, rhs *)
+  | Assign of string * exp list * exp
   | ExprStmt of exp option
   | Block of block_item list
   | If of exp * stmt * stmt option
