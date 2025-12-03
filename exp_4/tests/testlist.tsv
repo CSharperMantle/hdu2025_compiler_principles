@@ -15,3 +15,4 @@ typecheck	tests/test_typecheck_bad_id_1.sy	failure	Error type semant_error	1
 typecheck	tests/test_typecheck_bad_id_2.sy	failure	Error type semant_error	1
 typecheck	tests/test_typecheck_bad_return_1.sy	failure	Error type semant_error	1
 typecheck	tests/test_typecheck_bad_return_2.sy	failure	Error type semant_error	1
+typecheck	tests/test_typecheck_bad_multi_error_1.sy	failure	Error type semant_error	4

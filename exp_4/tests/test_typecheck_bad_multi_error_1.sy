@@ -1,0 +1,9 @@
+void fun1() {
+    nothing = 0x0d000721;
+    return 1;
+}
+
+int fun2() {
+    whatever();
+    return;
+}

@@ -1,5 +1,16 @@
 open Common
-open Result.Syntax
+
+(* Result with aggregated error monad. *)
+type ('a, 'b) agg_result = 'a * 'b list
+
+let agg_ok (x : 'a) : ('a, 'b) agg_result = (x, [])
+let agg_error (msg : string) (x : 'a) : ('a, 'b) agg_result = (x, [ msg ])
+
+(* bind operator for agg_result. *)
+let ( let* ) ((x, errs1) : ('a, 'b) agg_result) (f : 'a -> ('c, 'b) agg_result) :
+    ('c, 'b) agg_result =
+  let y, errs2 = f x in
+  (y, errs1 @ errs2)
 
 (* type semant_error = string *)
 
@@ -25,7 +36,7 @@ type name_entry =
   | VarEntry of sem_type
   | FunEntry of {
       args : sem_type list;
-      return : b_type;
+      ok : b_type;
     }
 
 type name_env = name_entry StringMap.t
@@ -39,87 +50,99 @@ let scalar_type t = { elem_ty = t; dims = [] }
 let int_type = scalar_type IntType
 let float_type = scalar_type FloatType
 let void_type = scalar_type VoidType
+let fallback_exp_attr = { ty = int_type; const_val = None }
 
-let rec visit_exp (exp : Ast.exp) (env : name_env) : (exp_attr, string list) result =
+let rec visit_exp (exp : Ast.exp) (env : name_env) : (exp_attr, string) agg_result =
   let visit_var name indices =
     match StringMap.find_opt name env with
-    | None -> Error [ Printf.sprintf "Undefined variable `%s`" name ]
-    | Some (FunEntry _) -> Error [ Printf.sprintf "`%s` is a function, not a variable" name ]
+    | None -> agg_error (Printf.sprintf "Undefined variable `%s`" name) fallback_exp_attr
+    | Some (FunEntry _) ->
+        agg_error (Printf.sprintf "`%s` is a function, not a variable" name) fallback_exp_attr
     | Some (VarEntry v_ty) ->
         let rec check_indices idxs =
           match idxs with
-          | [] -> Ok []
+          | [] -> agg_ok []
           | i :: rest ->
               let* i_attr = visit_exp i env in
+              let* rest_attrs = check_indices rest in
+              let result = i_attr :: rest_attrs in
               if i_attr.ty.elem_ty <> IntType || i_attr.ty.dims <> [] then
-                Error [ "Array index must be an integer scalar" ]
-              else Result.map (fun r -> i_attr :: r) (check_indices rest)
+                agg_error "Array index must be an integer scalar" result
+              else agg_ok result
         in
         let* _ = check_indices indices in
         let idx_count = List.length indices and dim_count = List.length v_ty.dims in
-        if idx_count > dim_count then Error [ "Too many subscripts for array" ]
+        if idx_count > dim_count then
+          agg_error "Too many subscripts for array"
+            { ty = { elem_ty = v_ty.elem_ty; dims = [] }; const_val = None }
         else
           let dims' = List.drop idx_count v_ty.dims in
-          Ok { ty = { elem_ty = v_ty.elem_ty; dims = dims' }; const_val = None }
+          agg_ok { ty = { elem_ty = v_ty.elem_ty; dims = dims' }; const_val = None }
   and visit_unary op sub =
     let* sub_attr = visit_exp sub env in
     match op with
     | Ast.Pos | Ast.Neg ->
-        if sub_attr.ty.dims <> [] then Error [ "Unary operator applied to array" ]
-        else if sub_attr.ty.elem_ty = VoidType then Error [ "Unary operator applied to void" ]
-        else
-          let exp_val =
-            match (op, sub_attr.const_val) with
-            | Ast.Neg, Some v -> Some (-v)
-            | Ast.Pos, Some v -> Some v
-            | _ -> None
-          in
-          Ok { ty = sub_attr.ty; const_val = exp_val }
+        let exp_val =
+          match (op, sub_attr.const_val) with
+          | Ast.Neg, Some v -> Some (-v)
+          | Ast.Pos, Some v -> Some v
+          | _ -> None
+        in
+        let result = { ty = sub_attr.ty; const_val = exp_val } in
+
+        if sub_attr.ty.dims <> [] then agg_error "Unary operator applied to array" result
+        else if sub_attr.ty.elem_ty = VoidType then
+          agg_error "Unary operator applied to `void`" result
+        else agg_ok result
     | Ast.Not ->
-        if sub_attr.ty.dims <> [] then Error [ "`!` applied to array" ]
-        else if sub_attr.ty.elem_ty = VoidType then Error [ "`!` applied to void" ]
-        else
-          let exp_val = Option.map (fun v -> if v = 0 then 1 else 0) sub_attr.const_val in
-          Ok { ty = int_type; const_val = exp_val }
+        let exp_val = Option.map (fun v -> if v = 0 then 1 else 0) sub_attr.const_val in
+        let result = { ty = int_type; const_val = exp_val } in
+
+        if sub_attr.ty.dims <> [] then agg_error "`!` applied to array" result
+        else if sub_attr.ty.elem_ty = VoidType then agg_error "`!` applied to `void`" result
+        else agg_ok result
   and visit_binary op lhs rhs =
     let* l_attr = visit_exp lhs env in
     let* r_attr = visit_exp rhs env in
+    let res_elem_ty =
+      match op with
+      | Ast.Add | Ast.Sub | Ast.Mul | Ast.Div | Ast.Mod ->
+          if l_attr.ty.elem_ty = FloatType || r_attr.ty.elem_ty = FloatType then FloatType
+          else IntType
+      | _ -> IntType
+    in
+    let result = { ty = scalar_type res_elem_ty; const_val = None } in
     if l_attr.ty.dims <> [] || r_attr.ty.dims <> [] then
-      Error [ "Binary operator applied to array" ]
+      agg_error "Binary operator applied to array" result
     else if l_attr.ty.elem_ty = VoidType || r_attr.ty.elem_ty = VoidType then
-      Error [ "Binary operator applied to void" ]
-    else
-      let res_elem_ty =
-        match op with
-        | Ast.Add | Ast.Sub | Ast.Mul | Ast.Div | Ast.Mod ->
-            if l_attr.ty.elem_ty = FloatType || r_attr.ty.elem_ty = FloatType then FloatType
-            else IntType
-        | _ -> IntType
-      in
-      Ok { ty = scalar_type res_elem_ty; const_val = None }
+      agg_error "Binary operator applied to void" result
+    else agg_ok result
   and visit_call name params =
     match StringMap.find_opt name env with
-    | None -> Error [ Printf.sprintf "Undefined function `%s`" name ]
-    | Some (VarEntry _) -> Error [ Printf.sprintf "`%s` is a variable, not a function" name ]
+    | None -> agg_error (Printf.sprintf "Undefined function `%s`" name) fallback_exp_attr
+    | Some (VarEntry _) ->
+        agg_error (Printf.sprintf "`%s` is a variable, not a function" name) fallback_exp_attr
     | Some (FunEntry f) ->
         let rec check_args args pms =
           match (args, pms) with
-          | [], [] -> Ok ()
+          | [], [] -> agg_ok ()
           | a :: a_rest, p_ty :: p_rest ->
               let* a_attr = visit_exp a env in
-              if a_attr.ty.dims <> p_ty.dims then Error [ "Argument dimension mismatch" ]
+              let* _ = check_args a_rest p_rest in
+
+              if a_attr.ty.dims <> p_ty.dims then agg_error "Argument dimension mismatch" ()
               else if
                 a_attr.ty.elem_ty <> p_ty.elem_ty
                 && not (a_attr.ty.elem_ty = IntType && p_ty.elem_ty = FloatType)
-              then Error [ "Argument type mismatch" ]
-              else check_args a_rest p_rest
-          | _ -> Error [ "Argument count mismatch" ]
+              then agg_error "Argument type mismatch" ()
+              else agg_ok ()
+          | _ -> agg_error "Argument count mismatch" ()
         in
         let* _ = check_args params f.args in
-        Ok { ty = scalar_type f.return; const_val = None }
+        agg_ok { ty = scalar_type f.ok; const_val = None }
   in
   match exp with
-  | Ast.IntLit v -> Ok { ty = int_type; const_val = Some v }
+  | Ast.IntLit v -> agg_ok { ty = int_type; const_val = Some v }
   | Ast.Var (name, indices) -> visit_var name indices
   | Ast.Unary (op, sub) -> visit_unary op sub
   | Ast.Binary (op, lhs, rhs) -> visit_binary op lhs rhs
@@ -127,28 +150,28 @@ let rec visit_exp (exp : Ast.exp) (env : name_env) : (exp_attr, string list) res
 
 let typecheck (comp_unit : Ast.comp_unit) : (unit, string list) result =
   let eval_const_dim e env =
-    match visit_exp e env with
-    | Ok { const_val = Some v; _ } -> Ok v
-    | Ok _ -> Error [ "Array dimension must be a constant integer" ]
-    | Error e -> Error e
+    let* attr = visit_exp e env in
+    match attr.const_val with
+    | Some v -> agg_ok v
+    | None -> agg_error "Array dimension must be a constant integer" 1
   in
   let rec eval_dims dims acc env =
     match dims with
-    | [] -> Ok (List.rev acc)
+    | [] -> agg_ok (List.rev acc)
     | h :: t ->
         let* v = eval_const_dim h env in
         eval_dims t (v :: acc) env
   in
   let rec add_const_defs defs ty env =
     match defs with
-    | [] -> Ok env
+    | [] -> agg_ok env
     | d :: ds ->
         let* dims = eval_dims d.Ast.const_dims [] env in
         let entry = VarEntry { elem_ty = ty; dims } in
         add_const_defs ds ty (StringMap.add d.Ast.const_name entry env)
   and add_var_defs defs ty env =
     match defs with
-    | [] -> Ok env
+    | [] -> agg_ok env
     | d :: ds ->
         let* dims = eval_dims d.Ast.var_dims [] env in
         let entry = VarEntry { elem_ty = ty; dims } in
@@ -159,51 +182,59 @@ let typecheck (comp_unit : Ast.comp_unit) : (unit, string list) result =
     | Ast.Assign (name, indices, rhs) ->
         let* lhs_attr = visit_exp (Ast.Var (name, indices)) env in
         let* rhs_attr = visit_exp rhs env in
+
         if lhs_attr.ty.dims <> [] || rhs_attr.ty.dims <> [] then
-          Error [ "Assignment operands must be scalars" ]
-        else if lhs_attr.ty.elem_ty = VoidType then Error [ "Cannot assign to void" ]
+          agg_error "Assignment operands must be scalars" env
+        else if lhs_attr.ty.elem_ty = VoidType then agg_error "Cannot assign to `void`" env
         else if
           lhs_attr.ty.elem_ty <> rhs_attr.ty.elem_ty
           && not (lhs_attr.ty.elem_ty = FloatType && rhs_attr.ty.elem_ty = IntType)
-        then Error [ "Type mismatch in assignment" ]
-        else Ok env
+        then agg_error "Type mismatch in assignment" env
+        else agg_ok env
     | Ast.ExprStmt (Some e) ->
         let* _ = visit_exp e env in
-        Ok env
-    | Ast.ExprStmt None -> Ok env
+        agg_ok env
+    | Ast.ExprStmt None -> agg_ok env
     | Ast.Block items ->
         let* _ = visit_block items ret_ty in_loop env in
-        Ok env
-    | Ast.If (cond, then_s, else_s) -> (
+        agg_ok env
+    | Ast.If (cond, then_s, else_s) ->
         let* cond_attr = visit_exp cond env in
-        if cond_attr.ty.elem_ty = VoidType || cond_attr.ty.dims <> [] then
-          Error [ "Condition must be non-void scalar" ]
-        else
-          let* _ = visit_stmt then_s ret_ty in_loop env in
+        let* _ = visit_stmt then_s ret_ty in_loop env in
+        let* _ =
           match else_s with
           | Some s -> visit_stmt s ret_ty in_loop env
-          | None -> Ok env)
+          | None -> agg_ok env
+        in
+
+        if cond_attr.ty.elem_ty = VoidType || cond_attr.ty.dims <> [] then
+          agg_error "Condition must be non-`void` scalar" env
+        else agg_ok env
     | Ast.While (cond, body) ->
         let* cond_attr = visit_exp cond env in
+        let* _ = visit_stmt body ret_ty true env in
         if cond_attr.ty.elem_ty = VoidType || cond_attr.ty.dims <> [] then
-          Error [ "Condition must be non-void scalar" ]
-        else visit_stmt body ret_ty true env
-    | Ast.Break -> if in_loop then Ok env else Error [ "break statement not within loop" ]
-    | Ast.Continue -> if in_loop then Ok env else Error [ "continue statement not within loop" ]
+          agg_error "Condition must be non-`void` scalar" env
+        else agg_ok env
+    | Ast.Break ->
+        if in_loop then agg_ok env else agg_error "`break` statement not within a loop" env
+    | Ast.Continue ->
+        if in_loop then agg_ok env else agg_error "`continue` statement not within a loop" env
     | Ast.Return e_opt -> (
         match (e_opt, ret_ty) with
-        | None, VoidType -> Ok env
-        | Some _, VoidType -> Error [ "Void function cannot return a value" ]
-        | None, _ -> Error [ "Non-void function must return a value" ]
+        | None, VoidType -> agg_ok env
+        | Some _, VoidType -> agg_error "`void` function cannot return values" env
+        | None, _ -> agg_error "Non-`void` function must return a value" env
         | Some e, t ->
             let* attr = visit_exp e env in
-            if attr.ty.dims <> [] then Error [ "Cannot return array" ]
-            else if attr.ty.elem_ty = t then Ok env
-            else if t = FloatType && attr.ty.elem_ty = IntType then Ok env
-            else Error [ "Return type mismatch" ])
+
+            if attr.ty.dims <> [] then agg_error "Cannot return an array" env
+            else if attr.ty.elem_ty = t then agg_ok env
+            else if t = FloatType && attr.ty.elem_ty = IntType then agg_ok env
+            else agg_error "Return type mismatch" env)
   and visit_block items ret_ty in_loop env =
     match items with
-    | [] -> Ok env
+    | [] -> agg_ok env
     | item :: rest ->
         let* env' =
           match item with
@@ -211,13 +242,13 @@ let typecheck (comp_unit : Ast.comp_unit) : (unit, string list) result =
           | Ast.Decl (Ast.ConstDecl (t, defs)) -> add_const_defs defs (b_type_from_ast t) env
           | Ast.Stmt s ->
               let* _ = visit_stmt s ret_ty in_loop env in
-              Ok env
+              agg_ok env
         in
         visit_block rest ret_ty in_loop env'
   in
   let rec visit_comp_unit_item_list items env =
     match items with
-    | [] -> Ok env
+    | [] -> agg_ok env
     | item :: rest -> (
         match item with
         | Ast.DeclItem (Ast.VarDecl (t, defs)) ->
@@ -234,21 +265,21 @@ let typecheck (comp_unit : Ast.comp_unit) : (unit, string list) result =
             in
             let rec process_params params acc_args =
               match params with
-              | [] -> Ok (List.rev acc_args)
+              | [] -> agg_ok (List.rev acc_args)
               | p :: p_rest ->
                   let ty = b_type_from_ast p.Ast.param_type in
                   let* dims =
                     match p.Ast.param_dims with
-                    | None -> Ok []
+                    | None -> agg_ok []
                     | Some ds ->
                         let* d_vals = eval_dims ds [] env in
-                        Ok (0 :: d_vals)
+                        agg_ok (0 :: d_vals)
                   in
                   process_params p_rest ((p.Ast.param_name, { elem_ty = ty; dims }) :: acc_args)
             in
             let* named_arg_types = process_params f.Ast.func_params [] in
             let arg_types = List.map snd named_arg_types in
-            let entry = FunEntry { args = arg_types; return = ret_ty } in
+            let entry = FunEntry { args = arg_types; ok = ret_ty } in
             let env_with_func = StringMap.add f.Ast.func_name entry env in
             let env_body =
               List.fold_left
@@ -258,5 +289,5 @@ let typecheck (comp_unit : Ast.comp_unit) : (unit, string list) result =
             let* _ = visit_block f.Ast.func_body ret_ty false env_body in
             visit_comp_unit_item_list rest env_with_func)
   in
-  let* _ = visit_comp_unit_item_list comp_unit StringMap.empty in
-  Ok ()
+  let _, errs = visit_comp_unit_item_list comp_unit StringMap.empty in
+  if errs = [] then Ok () else Error errs

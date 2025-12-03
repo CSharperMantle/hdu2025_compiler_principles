@@ -12,7 +12,7 @@ type name_entry =
   | VarEntry of sem_type
   | FunEntry of {
       args : sem_type list;
-      return : b_type;
+      ok : b_type;
     }
 
 type name_env = name_entry Common.StringMap.t
