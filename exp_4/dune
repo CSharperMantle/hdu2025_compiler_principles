@@ -16,7 +16,15 @@
   (name main)
   (public_name exp_4)
   (libraries menhirLib)
-  (modules common tokens ast lexer parser util main)
+  (modules
+    common
+    util
+    tokens
+    lexer
+    ast
+    parser
+    semant
+    main)
   (modes native)
   (flags (:standard
     -warn-error -27

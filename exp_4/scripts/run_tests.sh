@@ -16,6 +16,8 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 RESET_COLOR='\033[0m'
 
+OUTPUT_SYS_ERROR='Fatal error: exception Sys_error'
+
 echo "Reading tests from $spec_file..."
 while IFS="$(printf '\t')" read -r mode input_file expected_status expected_msg occurrence || [ -n "$mode" ]; do
     # Skip empty lines or comment
@@ -41,7 +43,9 @@ while IFS="$(printf '\t')" read -r mode input_file expected_status expected_msg 
         fi
     elif [ "$expected_status" = "failure" ]; then
         if [ $exit_code -ne 0 ]; then
-            if [ -n "$expected_msg" ]; then
+            if [ "${output#*"$OUTPUT_SYS_ERROR"}" != "$output" ]; then
+                reason="OCaml environment error, got: $output"
+            elif [ -n "$expected_msg" ]; then
                 if [ -n "$occurrence" ]; then
                     count=$(echo "$output" | grep -c "$expected_msg")
                     if [ "$count" -eq "$occurrence" ]; then

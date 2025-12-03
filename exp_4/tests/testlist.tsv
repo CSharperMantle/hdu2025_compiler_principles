@@ -10,3 +10,6 @@ parse	tests/task_4_3_sample_2_single_err_1.sy	failure	Error type parsing_error	1
 parse	tests/task_4_3_sample_2_single_err_2.sy	failure	Error type parsing_error	1
 parse	tests/task_4_3_sample_2.sy	failure	Error type parsing_error	2
 parse	tests/test_parser_unary_neg.sy	success		
+typecheck	tests/test_parser_unary_neg.sy	success		
+typecheck	tests/test_typecheck_bad_id_1.sy	failure	Error type semant_error	1
+typecheck	tests/test_typecheck_bad_id_2.sy	failure	Error type semant_error	1
