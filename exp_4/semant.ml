@@ -1,16 +1,6 @@
 open Common
-
-(* Result with aggregated error monad. *)
-type ('a, 'b) agg_result = 'a * 'b list
-
-let agg_ok (x : 'a) : ('a, 'b) agg_result = (x, [])
-let agg_error (msg : string) (x : 'a) : ('a, 'b) agg_result = (x, [ msg ])
-
-(* bind operator for agg_result. *)
-let ( let* ) ((x, errs1) : ('a, 'b) agg_result) (f : 'a -> ('c, 'b) agg_result) :
-    ('c, 'b) agg_result =
-  let y, errs2 = f x in
-  (y, errs1 @ errs2)
+open Common.AggResult
+open Common.AggResult.Syntax
 
 (* type semant_error = string *)
 
