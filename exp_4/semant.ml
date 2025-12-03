@@ -279,5 +279,5 @@ let typecheck (comp_unit : Ast.comp_unit) : (unit, string list) result =
             let* _ = visit_block f.Ast.func_body ret_ty false env_body in
             visit_comp_unit_item_list rest env_with_func)
   in
-  let _, errs = visit_comp_unit_item_list comp_unit StringMap.empty in
-  if errs = [] then Ok () else Error errs
+  let result = visit_comp_unit_item_list comp_unit StringMap.empty in
+  agg_to_result result |> Result.map (fun _ -> ()) |> Result.map_error (fun errs -> errs)

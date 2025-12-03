@@ -12,6 +12,11 @@ module AggResult = struct
     let y, errs2 = f x in
     (y, errs1 @ errs2)
 
+  let agg_is_ok ((_, errs) : ('a, 'b) agg_result) : bool = List.is_empty errs
+
+  let agg_to_result ((x, errs) : ('a, 'b) agg_result) : ('a, 'b list) result =
+    if agg_is_ok (x, errs) then Ok x else Error errs
+
   module Syntax = struct
     let ( let* ) = bind
   end
