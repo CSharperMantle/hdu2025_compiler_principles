@@ -55,13 +55,11 @@ type var_def = {
   var_init : init_val option;
 }
 
-type func_param = {
-  param_type : b_type;
-  param_name : string;
-  param_dims : exp list option; (* When this is None, then it's a scalar. Otherwise it's an array. *)
-}
+type decl =
+  | ConstDecl of b_type * const_def list
+  | VarDecl of b_type * var_def list
 
-type stmt =
+and stmt =
   | Assign of string * exp list * exp (* (lval, indices, rhs) *)
   | ExprStmt of exp option
   | Block of block_item list
@@ -75,9 +73,11 @@ and block_item =
   | Decl of decl
   | Stmt of stmt
 
-and decl =
-  | ConstDecl of b_type * const_def list
-  | VarDecl of b_type * var_def list
+type func_param = {
+  param_type : b_type;
+  param_name : string;
+  param_dims : exp list option; (* When this is None, then it's a scalar. Otherwise it's an array. *)
+}
 
 type func_def = {
   func_ret_type : b_type option;

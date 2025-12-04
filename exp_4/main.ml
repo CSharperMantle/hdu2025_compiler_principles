@@ -109,8 +109,8 @@ let typecheck_file filename =
           errors;
         exit 1
     | Ok comp_unit -> (
-        match Semant.typecheck comp_unit with
-        | Ok () -> ()
+        match Semant.type_comp_unit comp_unit with
+        | Ok _ -> ()
         | Error errs ->
             List.iter (fun msg -> Printf.eprintf "Error type semant_error: %s\n" msg) errs;
             exit 1)

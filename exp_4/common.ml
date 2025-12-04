@@ -21,3 +21,5 @@ module AggResult = struct
     let ( let* ) = bind
   end
 end
+
+let indent (lines : string list) : string list = List.map (fun l -> "  " ^ l) lines
