@@ -93,7 +93,7 @@ let parse_file filename =
       msg;
     exit 1
 
-let typecheck_file filename =
+let type_file filename =
   let ic = open_in filename in
   let lexbuf = Lexing.from_channel ic in
   lexbuf.lex_curr_p <- { lexbuf.lex_curr_p with pos_fname = filename };
@@ -110,7 +110,10 @@ let typecheck_file filename =
         exit 1
     | Ok comp_unit -> (
         match Semant.type_comp_unit comp_unit with
-        | Ok _ -> ()
+        | Ok tree ->
+            Typed_ast.prettify_t_comp_unit tree
+            |> List.fold_left (fun acc l -> acc ^ l ^ "\n") ""
+            |> print_endline
         | Error errs ->
             List.iter (fun msg -> Printf.eprintf "Error type semant_error: %s\n" msg) errs;
             exit 1)
@@ -121,7 +124,7 @@ let typecheck_file filename =
     exit 1
 
 let usage () =
-  Printf.eprintf "usage: %s <lex|parse|typecheck> <source-file>\n" Sys.argv.(0);
+  Printf.eprintf "usage: %s <lex|parse|type> <source-file>\n" Sys.argv.(0);
   exit 1
 
 let () =
@@ -129,5 +132,5 @@ let () =
   let cmd = String.trim Sys.argv.(1) in
   if cmd = "lex" then lex_file Sys.argv.(2)
   else if cmd = "parse" then parse_file Sys.argv.(2)
-  else if cmd = "typecheck" then typecheck_file Sys.argv.(2)
+  else if cmd = "type" then type_file Sys.argv.(2)
   else usage ()

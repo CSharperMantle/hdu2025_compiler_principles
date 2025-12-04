@@ -91,3 +91,5 @@ type exp_attr = {
   ty : sem_type;
   const_val : int option;
 }
+
+val prettify_t_comp_unit : t_comp_unit -> string list
