@@ -20,10 +20,10 @@ type sem_type = {
 
 type t_exp =
   | TIntLit of int
-  | TVar of string * t_exp list * sem_type
+  | TVar of int * string * t_exp list * sem_type
   | TUnary of Ast.unary_op * t_exp * sem_type
   | TBinary of Ast.bin_op * t_exp * t_exp * sem_type
-  | TCall of string * t_exp list * sem_type
+  | TCall of int * string * t_exp list * sem_type
 
 type t_const_init_val =
   | TConstExp of t_exp
@@ -87,7 +87,10 @@ type exp_attr = {
   const_val : int option;
 }
 
-let prettify_id_name (name : string) : string = Printf.sprintf "Id name=%s" name
+let prettify_id_name ((id, name) : int option * string) : string =
+  match id with
+  | Some id -> Printf.sprintf "Id %d (%s)" id name
+  | None -> Printf.sprintf "Id ? (%s)" name
 
 let b_type_to_string = function
   | IntType -> "int"
@@ -109,20 +112,20 @@ let prettify_sem_type (ty : sem_type) : string =
 let rec prettify_t_exp (node : t_exp) : string list =
   match node with
   | TIntLit n -> [ Printf.sprintf "TIntLit val=%d" n ]
-  | TVar (name, indices, ty) ->
+  | TVar (id, name, indices, ty) ->
       let indices_lines = List.map prettify_t_exp indices |> List.flatten in
       Printf.sprintf "TLVal %s" (prettify_sem_type ty)
-      :: indent (prettify_id_name name :: indices_lines)
+      :: (prettify_id_name (Some id, name) :: indices_lines |> indent)
   | TUnary (op, e, ty) ->
       Printf.sprintf "TUnaryExp op='%s' %s" (Ast.unary_op_to_string op) (prettify_sem_type ty)
-      :: indent (prettify_t_exp e)
+      :: (prettify_t_exp e |> indent)
   | TBinary (op, e1, e2, ty) ->
       Printf.sprintf "TBinaryExp op='%s' %s" (Ast.bin_op_to_string op) (prettify_sem_type ty)
-      :: indent (prettify_t_exp e1 @ prettify_t_exp e2)
-  | TCall (name, args, ty) ->
+      :: (prettify_t_exp e1 @ prettify_t_exp e2 |> indent)
+  | TCall (id, name, args, ty) ->
       let args_lines = List.map prettify_t_exp args |> List.flatten in
       Printf.sprintf "TCall %s" (prettify_sem_type ty)
-      :: indent (prettify_id_name name :: args_lines)
+      :: (prettify_id_name (Some id, name) :: args_lines |> indent)
 
 let rec prettify_t_const_init_val (node : t_const_init_val) : string list =
   match node with
@@ -134,7 +137,7 @@ let rec prettify_t_const_init_val (node : t_const_init_val) : string list =
 let prettify_t_const_def (node : t_const_def) : string list =
   let dims_lines = List.map prettify_t_exp node.t_const_dims |> List.flatten in
   let init_lines = prettify_t_const_init_val node.t_const_init in
-  "TConstDef" :: indent ((prettify_id_name node.t_const_name :: dims_lines) @ init_lines)
+  "TConstDef" :: ((prettify_id_name (None, node.t_const_name) :: dims_lines) @ init_lines |> indent)
 
 let prettify_t_const_decl (t : b_type) (defs : t_const_def list) : string list =
   let child_lines =
@@ -144,7 +147,7 @@ let prettify_t_const_decl (t : b_type) (defs : t_const_def list) : string list =
 
 let rec prettify_t_init_val (node : t_init_val) : string list =
   match node with
-  | TInitExp e -> "TInitVal" :: indent (prettify_t_exp e)
+  | TInitExp e -> "TInitVal" :: (prettify_t_exp e |> indent)
   | TInitArray vals ->
       let vals_lines = List.map prettify_t_init_val vals |> List.flatten in
       "TInitVal" :: indent vals_lines
@@ -156,7 +159,7 @@ let prettify_t_var_def (node : t_var_def) : string list =
     | Some init -> prettify_t_init_val init
     | None -> []
   in
-  "TVarDef" :: indent ((prettify_id_name node.t_var_name :: dims_lines) @ init_lines)
+  "TVarDef" :: ((prettify_id_name (None, node.t_var_name) :: dims_lines) @ init_lines |> indent)
 
 let prettify_t_var_decl (t : b_type) (defs : t_var_def list) : string list =
   let child_lines =
@@ -179,28 +182,30 @@ let prettify_t_func_param (node : t_func_param) : string list =
     | None -> []
   in
   "TFuncFParam"
-  :: indent (prettify_b_type node.t_param_type :: prettify_id_name node.t_param_name :: dims_lines)
+  :: (prettify_b_type node.t_param_type :: prettify_id_name (None, node.t_param_name) :: dims_lines
+     |> indent)
 
 let rec prettify_t_stmt (node : t_stmt) : string list =
   match node with
   | TAssign (name, indices, rhs) ->
       let indices_lines = List.map prettify_t_exp indices |> List.flatten in
       "TAssign"
-      :: indent (("TLVal" :: indent (prettify_id_name name :: indices_lines)) @ prettify_t_exp rhs)
-  | TExprStmt (Some e) -> "TExprStmt" :: indent (prettify_t_exp e)
+      :: (("TLVal" :: indent (prettify_id_name (None, name) :: indices_lines)) @ prettify_t_exp rhs
+         |> indent)
+  | TExprStmt (Some e) -> "TExprStmt" :: (prettify_t_exp e |> indent)
   | TExprStmt None -> [ "TExprStmt" ]
-  | TBlock items -> "TBlock" :: indent (List.map prettify_t_block_item items |> List.flatten)
+  | TBlock items -> "TBlock" :: (List.map prettify_t_block_item items |> List.flatten |> indent)
   | TIf (cond, then_s, else_s) ->
       let else_lines =
         match else_s with
         | Some s -> prettify_t_stmt s
         | None -> []
       in
-      "TIf" :: indent (prettify_t_exp cond @ prettify_t_stmt then_s @ else_lines)
-  | TWhile (cond, body) -> "TWhile" :: indent (prettify_t_exp cond @ prettify_t_stmt body)
+      "TIf" :: (prettify_t_exp cond @ prettify_t_stmt then_s @ else_lines |> indent)
+  | TWhile (cond, body) -> "TWhile" :: (prettify_t_exp cond @ prettify_t_stmt body |> indent)
   | TBreak -> [ "TBreak" ]
   | TContinue -> [ "TContinue" ]
-  | TReturn (Some e) -> "TReturn" :: indent (prettify_t_exp e)
+  | TReturn (Some e) -> "TReturn" :: (prettify_t_exp e |> indent)
   | TReturn None -> [ "TReturn" ]
 
 and prettify_t_block_item (node : t_block_item) : string list =
@@ -216,10 +221,11 @@ let prettify_t_func_def (node : t_func_def) : string list =
   in
   let params_lines = List.map prettify_t_func_param node.t_func_params |> List.flatten in
   let body_lines =
-    "TBlock" :: indent (List.map prettify_t_block_item node.t_func_body |> List.flatten)
+    "TBlock" :: (List.map prettify_t_block_item node.t_func_body |> List.flatten |> indent)
   in
   "TFuncDef"
-  :: indent ((ret_type_line :: prettify_id_name node.t_func_name :: params_lines) @ body_lines)
+  :: ((ret_type_line :: prettify_id_name (None, node.t_func_name) :: params_lines) @ body_lines
+     |> indent)
 
 let prettify_t_comp_unit_item (node : t_comp_unit_item) : string list =
   match node with

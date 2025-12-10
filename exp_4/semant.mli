@@ -2,14 +2,23 @@ open Sem_ast
 
 (* Symbol table entry. *)
 type name_entry =
-  | VarEntry of sem_type
+  | VarEntry of {
+      id : int;
+      ty : sem_type;
+    }
   | FunEntry of {
+      id : int;
       args : sem_type list;
-      ok : b_type;
+      ret : b_type;
     }
 
-type name_env = name_entry Common.StringMap.t
-type translation_context = { ir : unit list }
+type translation_context = {
+  names : name_entry Common.StringMap.t;
+  next_name_id : int;
+  next_label_id : int;
+  (* TODO: Hole for codegen *)
+  ir : unit list;
+}
 
 val empty_translation_context : translation_context
 

@@ -6,6 +6,7 @@ type b_type =
 val b_type_from_ast : Ast.b_type -> b_type
 val b_type_from_ast_func : Ast.b_type option -> b_type
 
+(* A value type produced by semantics analysis. *)
 type sem_type = {
   elem_ty : b_type;
   dims : int list; (* When this is [], then it's a scalar. Otherwise it's an array. *)
@@ -14,10 +15,10 @@ type sem_type = {
 (* Typed counterpart of Ast.exp. *)
 type t_exp =
   | TIntLit of int
-  | TVar of string * t_exp list * sem_type
+  | TVar of int * string * t_exp list * sem_type
   | TUnary of Ast.unary_op * t_exp * sem_type
   | TBinary of Ast.bin_op * t_exp * t_exp * sem_type
-  | TCall of string * t_exp list * sem_type
+  | TCall of int * string * t_exp list * sem_type
 
 (* Typed counterpart of Ast.const_init_val. *)
 type t_const_init_val =
