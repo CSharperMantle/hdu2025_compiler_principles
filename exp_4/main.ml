@@ -111,7 +111,7 @@ let type_file filename =
     | Ok comp_unit -> (
         match Semant.type_comp_unit comp_unit with
         | Ok tree ->
-            Typed_ast.prettify_t_comp_unit tree
+            Sem_ast.prettify_t_comp_unit tree
             |> List.fold_left (fun acc l -> acc ^ l ^ "\n") ""
             |> print_endline
         | Error errs ->

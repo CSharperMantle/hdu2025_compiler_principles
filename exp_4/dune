@@ -23,7 +23,7 @@
     lexer
     ast
     parser
-    typed_ast
+    sem_ast
     semant
     main)
   (modes native)

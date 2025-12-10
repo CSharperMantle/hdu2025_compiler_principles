@@ -1,7 +1,7 @@
 open Common
 open Common.AggResult
 open Common.AggResult.Syntax
-open Typed_ast
+open Sem_ast
 
 (* type semant_error = string *)
 

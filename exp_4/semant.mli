@@ -1,4 +1,4 @@
-open Typed_ast
+open Sem_ast
 
 (* Symbol table entry. *)
 type name_entry =
