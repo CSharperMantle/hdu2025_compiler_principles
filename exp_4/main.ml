@@ -109,8 +109,8 @@ let type_file filename =
           errors;
         exit 1
     | Ok comp_unit -> (
-        match Semant.type_comp_unit comp_unit with
-        | Ok tree ->
+        match Semant.translate comp_unit Semant.empty_translation_context with
+        | Ok (tree, _ctx) ->
             Sem_ast.prettify_t_comp_unit tree
             |> List.fold_left (fun acc l -> acc ^ l ^ "\n") ""
             |> print_endline

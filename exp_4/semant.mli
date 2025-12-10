@@ -9,5 +9,9 @@ type name_entry =
     }
 
 type name_env = name_entry Common.StringMap.t
+type translation_context = { ir : unit list }
 
-val type_comp_unit : Ast.comp_unit -> (t_comp_unit, string list) result
+val empty_translation_context : translation_context
+
+val translate :
+  Ast.comp_unit -> translation_context -> (t_comp_unit * translation_context, string list) result
