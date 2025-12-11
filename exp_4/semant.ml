@@ -32,6 +32,7 @@ type translation_context = {
   next_name_id : int;
   next_label_id : int;
   ir : Tac.tac_instr list;
+  functions : Tac.tac_function list;
 }
 
 let emit (instr : Tac.tac_instr) (ctx : translation_context) : translation_context =
@@ -44,6 +45,7 @@ let merge_sub_context (outer : translation_context) (inner : translation_context
     next_name_id = inner.next_name_id;
     next_label_id = inner.next_label_id;
     ir = inner.ir @ outer.ir;
+    functions = inner.functions @ outer.functions;
   }
 
 let alloc_name_id (ctx : translation_context) : int * translation_context =
@@ -78,6 +80,7 @@ let empty_translation_context =
     next_name_id = 0;
     next_label_id = 0;
     ir = [];
+    functions = [];
   }
 
 let rec gen_opnd_index (indices : t_exp list) (dims : int list) (ctx : translation_context) :
@@ -322,7 +325,7 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
   | Ast.Call (name, params) -> translate_call name params ctx
 
 let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
-    (t_comp_unit * translation_context, string list) result =
+    (t_comp_unit * translation_context * Tac.tac_program, string list) result =
   let eval_const_dim e ctx =
     let* t_e, attr, ctx = translate_exp e ctx in
 
@@ -581,7 +584,15 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
             in
             let* arg_tys, t_params, ctx_body = process_params f.Ast.func_params [] [] ctx in
             let func_id, ctx = alloc_func f.Ast.func_name arg_tys ret_ty ctx in
-            let* t_body, _ = translate_block f.Ast.func_body ret_ty false ctx_body in
+            let* t_body, ctx_body_final = translate_block f.Ast.func_body ret_ty false ctx_body in
+            let tac_func =
+              {
+                Tac.func_name = f.Ast.func_name;
+                func_params = List.map (fun p -> p.t_param_id) t_params;
+                func_body = List.rev ctx_body_final.ir;
+              }
+            in
+            let ctx = { ctx with functions = tac_func :: ctx.functions } in
             let t_func =
               {
                 t_func_id = func_id;
@@ -594,5 +605,16 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
             let* rest_items, ctx = translate_comp_unit_item_list rest ctx in
             agg_ok (TFuncDefItem t_func :: rest_items, ctx))
   in
-  let result = translate_comp_unit_item_list comp_unit ctx in
+  let result =
+    let* comp_unit, final_ctx = translate_comp_unit_item_list comp_unit ctx in
+    let globals =
+      IntMap.bindings final_ctx.var_kinds
+      |> List.filter_map (fun (id, kind) -> if kind = Named then Some id else None)
+    in
+    let main_func =
+      { Tac.func_name = "main"; func_params = []; func_body = List.rev final_ctx.ir }
+    in
+    let program = { Tac.globals; functions = main_func :: List.rev final_ctx.functions } in
+    agg_ok (comp_unit, final_ctx, program)
+  in
   agg_to_result result

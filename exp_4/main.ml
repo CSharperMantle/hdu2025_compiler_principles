@@ -111,7 +111,7 @@ let type_file filename =
         exit 1
     | Ok comp_unit -> (
         match Semant.translate comp_unit Semant.empty_translation_context with
-        | Ok (tree, _ctx) ->
+        | Ok (tree, _, _) ->
             Sem_ast.prettify_t_comp_unit tree
             |> List.fold_left (fun acc l -> acc ^ l ^ "\n") ""
             |> print_endline
@@ -124,8 +124,35 @@ let type_file filename =
       msg;
     exit 1
 
+let tac_file filename =
+  let ic = open_in filename in
+  let lexbuf = Lexing.from_channel ic in
+  lexbuf.lex_curr_p <- { lexbuf.lex_curr_p with pos_fname = filename };
+  try
+    let comp_unit = parse lexbuf in
+    close_in ic;
+    match comp_unit with
+    | Error errors ->
+        List.iter
+          (fun (loc, msg) ->
+            Printf.eprintf "Error type parsing_error at %s:%d:%d: %s\n" filename loc.lineno
+              loc.colno msg)
+          errors;
+        exit 1
+    | Ok comp_unit -> (
+        match Semant.translate comp_unit Semant.empty_translation_context with
+        | Ok (_, _, program) -> Tac.prettify_tac_program program |> print_endline
+        | Error errs ->
+            List.iter (fun msg -> Printf.eprintf "Error type semant_error: %s\n" msg) errs;
+            exit 1)
+  with Lexer.Lexing_error (loc, msg) ->
+    close_in ic;
+    Printf.eprintf "Error type Lexer.Lexing_error at %s:%d:%d: %s\n" filename loc.lineno loc.colno
+      msg;
+    exit 1
+
 let usage () =
-  Printf.eprintf "usage: %s <lex|parse|type> <source-file>\n" Sys.argv.(0);
+  Printf.eprintf "usage: %s <lex|parse|type|tac> <source-file>\n" Sys.argv.(0);
   exit 1
 
 let main () =
@@ -134,6 +161,7 @@ let main () =
   if cmd = "lex" then lex_file Sys.argv.(2)
   else if cmd = "parse" then parse_file Sys.argv.(2)
   else if cmd = "type" then type_file Sys.argv.(2)
+  else if cmd = "tac" then tac_file Sys.argv.(2)
   else usage ()
 
 let () = if not !Sys.interactive then main ()

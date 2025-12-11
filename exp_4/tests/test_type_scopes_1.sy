@@ -1,5 +1,5 @@
 void foo(int a) {
-    int x = 0;
+    int x = a + a * a;
 }
 
 void bar(int a) {

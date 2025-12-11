@@ -92,4 +92,6 @@ type comp_unit_item =
 
 type comp_unit = comp_unit_item list
 
+val prettify_bin_op : bin_op -> string
+val prettify_unary_op : unary_op -> string
 val prettify_comp_unit : comp_unit -> string list

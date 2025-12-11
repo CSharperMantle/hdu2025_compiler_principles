@@ -113,6 +113,26 @@ type comp_unit_item =
 
 type comp_unit = comp_unit_item list
 
+let prettify_bin_op = function
+  | Add -> "+"
+  | Sub -> "-"
+  | Mul -> "*"
+  | Div -> "/"
+  | Mod -> "%"
+  | Eq -> "=="
+  | Neq -> "!="
+  | Lt -> "<"
+  | Leq -> "<="
+  | Gt -> ">"
+  | Geq -> ">="
+  | And -> "&&"
+  | Or -> "||"
+
+let prettify_unary_op = function
+  | Pos -> "+"
+  | Neg -> "-"
+  | Not -> "!"
+
 let prettify_id_name (name : string) : string = Printf.sprintf "Id name=%s" name
 
 let prettify_b_type (node : b_type) : string =
