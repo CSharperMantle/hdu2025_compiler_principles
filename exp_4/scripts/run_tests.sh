@@ -51,7 +51,7 @@ while IFS="$(printf '\t')" read -r mode input_file expected_status expected_msg 
                     if [ "$count" -eq "$occurrence" ]; then
                         passed=1
                     else
-                        reason="Expected error message '$expected_msg' to occur $occurrence times, found $count"
+                        reason="Expected error message '$expected_msg' to occur $occurrence times, found $count. got: $output"
                     fi
                 elif echo "$output" | grep -q "$expected_msg"; then
                     passed=1

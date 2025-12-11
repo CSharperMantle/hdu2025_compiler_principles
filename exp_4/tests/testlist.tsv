@@ -11,8 +11,9 @@ parse	tests/task_4_3_sample_2_single_err_2.sy	failure	Error type parsing_error	1
 parse	tests/task_4_3_sample_2.sy	failure	Error type parsing_error	2
 parse	tests/test_parser_unary_neg.sy	success		
 type	tests/test_parser_unary_neg.sy	success		
-type	tests/test_typecheck_bad_id_1.sy	failure	Error type semant_error	1
-type	tests/test_typecheck_bad_id_2.sy	failure	Error type semant_error	1
-type	tests/test_typecheck_bad_return_1.sy	failure	Error type semant_error	1
-type	tests/test_typecheck_bad_return_2.sy	failure	Error type semant_error	1
-type	tests/test_typecheck_bad_multi_error_1.sy	failure	Error type semant_error	4
+type	tests/test_type_bad_id_1.sy	failure	Error type semant_error	1
+type	tests/test_type_bad_id_2.sy	failure	Error type semant_error	1
+type	tests/test_type_bad_id_3.sy	failure	Error type semant_error	1
+type	tests/test_type_bad_return_1.sy	failure	Error type semant_error	1
+type	tests/test_type_bad_return_2.sy	failure	Error type semant_error	1
+type	tests/test_type_bad_multi_error_1.sy	failure	Error type semant_error	4
