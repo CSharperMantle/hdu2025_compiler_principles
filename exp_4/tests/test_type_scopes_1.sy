@@ -1,7 +1,18 @@
-void foo(int a) {
-    int x = a + a * a;
+int foo(int a) {
+    if (a > 0) {
+        return 1;
+    } else {
+        int x = 2;
+        return x;
+    }
 }
 
-void bar(int a) {
-    int x = 0;
+int bar(int a) {
+    int v;
+    if (a % 2 == 0) {
+        v = a / 2;
+    } else {
+        v = 3 * a + 1;
+    }
+    return v;
 }

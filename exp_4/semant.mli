@@ -21,9 +21,10 @@ type symbol_kind =
 type translation_context = {
   names : name_entry StringMap.t;
   var_kinds : symbol_kind IntMap.t;
+  var_tys : sem_type IntMap.t;
   next_name_id : int;
   next_label_id : int;
-  ir : Tac.tac_instr list;
+  current_ir : Tac.tac_instr list;
   functions : Tac.tac_function list;
 }
 

@@ -29,14 +29,15 @@ type symbol_kind =
 type translation_context = {
   names : name_entry StringMap.t;
   var_kinds : symbol_kind IntMap.t;
+  var_tys : sem_type IntMap.t;
   next_name_id : int;
   next_label_id : int;
-  ir : Tac.tac_instr list;
+  current_ir : Tac.tac_instr list;
   functions : Tac.tac_function list;
 }
 
 let emit (instr : Tac.tac_instr) (ctx : translation_context) : translation_context =
-  { ctx with ir = instr :: ctx.ir }
+  { ctx with current_ir = instr :: ctx.current_ir }
 
 let merge_sub_context (outer : translation_context) (inner : translation_context) :
     translation_context =
@@ -44,7 +45,7 @@ let merge_sub_context (outer : translation_context) (inner : translation_context
     outer with
     next_name_id = inner.next_name_id;
     next_label_id = inner.next_label_id;
-    ir = inner.ir @ outer.ir;
+    current_ir = inner.current_ir @ outer.current_ir;
     functions = inner.functions @ outer.functions;
   }
 
@@ -62,6 +63,7 @@ let alloc_named (name : string) (ty : sem_type) (kind : symbol_kind) (ctx : tran
       ctx with
       names = StringMap.add name (VarEntry { id; ty }) ctx.names;
       var_kinds = IntMap.add id kind ctx.var_kinds;
+      var_tys = IntMap.add id ty ctx.var_tys;
     } )
 
 let alloc_func (name : string) (args : sem_type list) (ret : b_type) (ctx : translation_context) :
@@ -77,9 +79,10 @@ let empty_translation_context =
   {
     names = StringMap.empty;
     var_kinds = IntMap.empty;
+    var_tys = IntMap.empty;
     next_name_id = 0;
     next_label_id = 0;
-    ir = [];
+    current_ir = [];
     functions = [];
   }
 
@@ -100,12 +103,8 @@ and gen_exp (exp : t_exp) (ctx : translation_context) : Tac.operand * translatio
   match exp with
   | TIntLit n -> (Tac.Const n, ctx)
   | TVar (id, _, [], _) -> (Tac.Symbol id, ctx)
-  | TVar (id, name, indices, _) ->
-      let dims =
-        match StringMap.find_opt name ctx.names with
-        | Some (VarEntry e) -> e.ty.dims
-        | _ -> internal_error "Array name not found"
-      in
+  | TVar (id, _, indices, ty) ->
+      let dims = ty.dims in
       let opnd_index, ctx = gen_opnd_index indices dims ctx in
       let temp, ctx = alloc_temp ctx in
       let rd = Tac.MemRead (temp, id, opnd_index) in
@@ -138,12 +137,12 @@ let rec gen_stmt (s : t_stmt) (ctx : translation_context) : translation_context 
   | TAssign (id, _, [], rhs) ->
       let rhs_opnd, ctx = gen_exp rhs ctx in
       let instr = Tac.Move (id, rhs_opnd) in
-      { ctx with ir = instr :: ctx.ir }
-  | TAssign (id, name, indices, rhs) ->
+      { ctx with current_ir = instr :: ctx.current_ir }
+  | TAssign (id, _, indices, rhs) ->
       let dims =
-        match StringMap.find_opt name ctx.names with
-        | Some (VarEntry e) -> e.ty.dims
-        | _ -> internal_error "Array name not found"
+        match IntMap.find_opt id ctx.var_tys with
+        | Some ty -> ty.dims
+        | None -> internal_error "Variable type not found"
       in
       let rhs_opnd, ctx = gen_exp rhs ctx in
       let opnd_index, ctx = gen_opnd_index indices dims ctx in
@@ -169,11 +168,7 @@ let rec gen_stmt (s : t_stmt) (ctx : translation_context) : translation_context 
         |> emit (Tac.CondJump (cond_opnd, l_else))
         |> gen_stmt then_s |> emit (Tac.Jump l_end) |> emit (Tac.Label l_else)
       in
-      let ctx =
-        match else_s_opt with
-        | Some else_s -> gen_stmt else_s ctx
-        | None -> ctx
-      in
+      let ctx = map_or (fun else_s -> gen_stmt else_s ctx) ctx else_s_opt in
       ctx |> emit (Tac.Label l_end)
   | TWhile (cond, body) ->
       let l_start, ctx = alloc_label_id ctx in
@@ -244,7 +239,6 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
           let dims' = List.drop idx_count v.ty.dims in
           let ty = { elem_ty = v.ty.elem_ty; dims = dims' } in
           let t_node = TVar (v.id, name, t_indices, ty) in
-          let _, ctx = gen_exp t_node ctx in
           agg_ok (t_node, { ty; const_val = None }, ctx)
   and translate_unary op sub ctx =
     let* sub_expr, sub_attr, ctx = translate_exp sub ctx in
@@ -258,7 +252,6 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
         in
         let result_attr = { ty = sub_attr.ty; const_val = exp_val } in
         let result_expr = TUnary (op, sub_expr, sub_attr.ty) in
-        let _, ctx = gen_exp result_expr ctx in
 
         if sub_attr.ty.dims <> [] then
           agg_error "Unary operator applied to array" (result_expr, result_attr, ctx)
@@ -269,7 +262,6 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
         let exp_val = Option.map (fun v -> if v = 0 then 1 else 0) sub_attr.const_val in
         let result_expr = TUnary (op, sub_expr, int_type)
         and result_attr = { ty = int_type; const_val = exp_val } in
-        let _, ctx = gen_exp result_expr ctx in
 
         if sub_attr.ty.dims <> [] then
           agg_error "`!` applied to array" (result_expr, result_attr, ctx)
@@ -289,7 +281,6 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
     let res_ty = scalar_type res_elem_ty in
     let result_expr = TBinary (op, l_expr, r_expr, res_ty)
     and result_attr = { ty = res_ty; const_val = None } in
-    let _, ctx = gen_exp result_expr ctx in
 
     if l_attr.ty.dims <> [] || r_attr.ty.dims <> [] then
       agg_error "Binary operator applied to array" (result_expr, result_attr, ctx)
@@ -311,13 +302,11 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
         let ret_ty = scalar_type f.ret in
         let result_expr = TCall (f.id, name, param_exprs, ret_ty)
         and result_attr = { ty = ret_ty; const_val = None } in
-        let _, ctx = gen_exp result_expr ctx in
         agg_ok (result_expr, result_attr, ctx)
   in
   match exp with
   | Ast.IntLit v ->
       let t_node = TIntLit v in
-      let _, ctx = gen_exp t_node ctx in
       agg_ok (t_node, { ty = int_type; const_val = Some v }, ctx)
   | Ast.Var (name, indices) -> translate_var name indices ctx
   | Ast.Unary (op, sub) -> translate_unary op sub ctx
@@ -393,9 +382,9 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
           }
         in
         add_const_defs ds ty (t_def :: acc_defs) ctx
-  and add_var_defs defs ty acc_defs ctx =
+  and add_var_defs defs ty acc_defs acc_stmts ctx =
     match defs with
-    | [] -> agg_ok (List.rev acc_defs, ctx)
+    | [] -> agg_ok (List.rev acc_defs, List.rev acc_stmts, ctx)
     | d :: ds ->
         let* dims_vals, dims_exprs, ctx = eval_dims d.Ast.var_dims [] [] ctx in
         let* t_init, ctx =
@@ -406,12 +395,11 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
           | None -> agg_ok (None, ctx)
         in
         let id, ctx = alloc_named d.Ast.var_name { elem_ty = ty; dims = dims_vals } Named ctx in
-        let ctx =
+        let init_stmt =
           match t_init with
-          | Some (TInitExp init_exp) ->
-              gen_stmt (TAssign (id, d.Ast.var_name, dims_exprs, init_exp)) ctx
+          | Some (TInitExp init_exp) -> Some (TAssign (id, d.Ast.var_name, dims_exprs, init_exp))
           | Some (TInitArray _) -> internal_error "todo"
-          | None -> ctx
+          | None -> None
         in
         let t_def =
           {
@@ -421,7 +409,8 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
             t_var_init = t_init;
           }
         in
-        add_var_defs ds ty (t_def :: acc_defs) ctx
+        let acc_stmts = map_or (fun s -> s :: acc_stmts) acc_stmts init_stmt in
+        add_var_defs ds ty (t_def :: acc_defs) acc_stmts ctx
   in
 
   let rec translate_stmt stmt ret_ty in_loop ctx =
@@ -436,7 +425,6 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
           | _ -> internal_error "Ast.Var translated to non-TVar"
         in
         let res_stmt = TAssign (id, name, t_indices, rhs_expr) in
-        let ctx = gen_stmt res_stmt ctx in
 
         if lhs_attr.ty.dims <> [] || rhs_attr.ty.dims <> [] then
           agg_error "Assignment operands must be scalars" (res_stmt, ctx)
@@ -450,16 +438,13 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
     | Ast.ExprStmt (Some e) ->
         let* t_e, _, ctx = translate_exp e ctx in
         let res_stmt = TExprStmt (Some t_e) in
-        let ctx = gen_stmt res_stmt ctx in
         agg_ok (res_stmt, ctx)
     | Ast.ExprStmt None ->
         let res_stmt = TExprStmt None in
-        let ctx = gen_stmt res_stmt ctx in
         agg_ok (res_stmt, ctx)
     | Ast.Block items ->
         let* t_items, sub_ctx = translate_block items ret_ty in_loop ctx in
         let res_stmt = TBlock t_items in
-        let sub_ctx = gen_stmt res_stmt sub_ctx in
         let ctx = merge_sub_context ctx sub_ctx in
         agg_ok (res_stmt, ctx)
     | Ast.If (cond, then_s, else_s) ->
@@ -474,7 +459,6 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
         in
 
         let res_stmt = TIf (cond_expr, then_stmt, else_stmt) in
-        let ctx = gen_stmt res_stmt ctx in
 
         if cond_attr.ty.elem_ty = VoidType || cond_attr.ty.dims <> [] then
           agg_error "Condition must be non-`void` scalar" (res_stmt, ctx)
@@ -484,39 +468,32 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
         let* body_stmt, ctx = translate_stmt body ret_ty true ctx in
 
         let res_stmt = TWhile (cond_expr, body_stmt) in
-        let ctx = gen_stmt res_stmt ctx in
 
         if cond_attr.ty.elem_ty = VoidType || cond_attr.ty.dims <> [] then
           agg_error "Condition must be non-`void` scalar" (res_stmt, ctx)
         else agg_ok (res_stmt, ctx)
     | Ast.Break ->
         let res_stmt = TBreak in
-        let ctx = gen_stmt res_stmt ctx in
         if in_loop then agg_ok (res_stmt, ctx)
         else agg_error "`break` statement not within a loop" (res_stmt, ctx)
     | Ast.Continue ->
         let res_stmt = TContinue in
-        let ctx = gen_stmt res_stmt ctx in
         if in_loop then agg_ok (res_stmt, ctx)
         else agg_error "`continue` statement not within a loop" (res_stmt, ctx)
     | Ast.Return e_opt -> (
         match (e_opt, ret_ty) with
         | None, VoidType ->
             let res_stmt = TReturn None in
-            let ctx = gen_stmt res_stmt ctx in
             agg_ok (res_stmt, ctx)
         | Some _, VoidType ->
             let res_stmt = TReturn None in
-            let ctx = gen_stmt res_stmt ctx in
             agg_error "`void` function cannot return values" (res_stmt, ctx)
         | None, _ ->
             let res_stmt = TReturn None in
-            let ctx = gen_stmt res_stmt ctx in
             agg_error "Non-`void` function must return a value" (res_stmt, ctx)
         | Some e, t ->
             let* t_e, attr, ctx = translate_exp e ctx in
             let res_stmt = TReturn (Some t_e) in
-            let ctx = gen_stmt res_stmt ctx in
 
             if attr.ty.dims <> [] then agg_error "Cannot return an array" (res_stmt, ctx)
             else if attr.ty.elem_ty = t then agg_ok (res_stmt, ctx)
@@ -526,20 +503,22 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
     match items with
     | [] -> agg_ok ([], ctx)
     | item :: rest ->
-        let* t_item, ctx =
+        let* t_items, ctx =
           match item with
           | Ast.Decl (Ast.VarDecl (t, defs)) ->
-              let* t_defs, ctx = add_var_defs defs (b_type_from_ast t) [] ctx in
-              agg_ok (TDecl (TVarDecl (b_type_from_ast t, t_defs)), ctx)
+              let* t_defs, init_stmts, ctx = add_var_defs defs (b_type_from_ast t) [] [] ctx in
+              let decl_item = TDecl (TVarDecl (b_type_from_ast t, t_defs)) in
+              let stmt_items = List.map (fun s -> TStmt s) init_stmts in
+              agg_ok (decl_item :: stmt_items, ctx)
           | Ast.Decl (Ast.ConstDecl (t, defs)) ->
               let* t_defs, ctx = add_const_defs defs (b_type_from_ast t) [] ctx in
-              agg_ok (TDecl (TConstDecl (b_type_from_ast t, t_defs)), ctx)
+              agg_ok ([ TDecl (TConstDecl (b_type_from_ast t, t_defs)) ], ctx)
           | Ast.Stmt s ->
               let* t_s, ctx = translate_stmt s ret_ty in_loop ctx in
-              agg_ok (TStmt t_s, ctx)
+              agg_ok ([ TStmt t_s ], ctx)
         in
         let* rest_items, final_ctx = translate_block rest ret_ty in_loop ctx in
-        agg_ok (t_item :: rest_items, final_ctx)
+        agg_ok (t_items @ rest_items, final_ctx)
   in
   let rec translate_comp_unit_item_list items ctx =
     match items with
@@ -547,7 +526,7 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
     | item :: rest -> (
         match item with
         | Ast.DeclItem (Ast.VarDecl (t, defs)) ->
-            let* t_defs, ctx = add_var_defs defs (b_type_from_ast t) [] ctx in
+            let* t_defs, _, ctx = add_var_defs defs (b_type_from_ast t) [] [] ctx in
             let t_item = TDeclItem (TVarDecl (b_type_from_ast t, t_defs)) in
             let* rest_items, ctx = translate_comp_unit_item_list rest ctx in
             agg_ok (t_item :: rest_items, ctx)
@@ -582,17 +561,30 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
                   in
                   process_params p_rest (arg_ty :: acc_arg_tys) (t_param :: acc_t_params) ctx
             in
-            let* arg_tys, t_params, ctx_body = process_params f.Ast.func_params [] [] ctx in
-            let func_id, ctx = alloc_func f.Ast.func_name arg_tys ret_ty ctx in
-            let* t_body, ctx_body_final = translate_block f.Ast.func_body ret_ty false ctx_body in
+            let* arg_tys, t_params, ctx_params = process_params f.Ast.func_params [] [] ctx in
+            let func_id, ctx_body = alloc_func f.Ast.func_name arg_tys ret_ty ctx_params in
+            let* t_body, ctx_body = translate_block f.Ast.func_body ret_ty false ctx_body in
+            let ctx_body = gen_stmt (TBlock t_body) ctx_body in
             let tac_func =
               {
+                Tac.func_id;
                 Tac.func_name = f.Ast.func_name;
                 func_params = List.map (fun p -> p.t_param_id) t_params;
-                func_body = List.rev ctx_body_final.ir;
+                func_body = List.rev ctx_body.current_ir;
               }
             in
-            let ctx = { ctx with functions = tac_func :: ctx.functions } in
+            let ctx =
+              {
+                ctx with
+                names =
+                  StringMap.add f.Ast.func_name
+                    (FunEntry { id = func_id; args = arg_tys; ret = ret_ty })
+                    ctx.names;
+                next_name_id = ctx_body.next_name_id;
+                next_label_id = ctx_body.next_label_id;
+                functions = tac_func :: ctx.functions;
+              }
+            in
             let t_func =
               {
                 t_func_id = func_id;
@@ -611,10 +603,7 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
       IntMap.bindings final_ctx.var_kinds
       |> List.filter_map (fun (id, kind) -> if kind = Named then Some id else None)
     in
-    let main_func =
-      { Tac.func_name = "main"; func_params = []; func_body = List.rev final_ctx.ir }
-    in
-    let program = { Tac.globals; functions = main_func :: List.rev final_ctx.functions } in
+    let program = { Tac.globals; functions = List.rev final_ctx.functions } in
     agg_ok (comp_unit, final_ctx, program)
   in
   agg_to_result result

@@ -17,6 +17,7 @@ type tac_instr =
   | MemWrite of int * operand * operand
 
 type tac_function = {
+  func_id : int;
   func_name : string;
   func_params : int list;
   func_body : tac_instr list;
@@ -43,9 +44,10 @@ let prettify_tac_instr = function
   | Move (dest, src) ->
       Printf.sprintf "%s <- %s" (prettify_operand (Symbol dest)) (prettify_operand src)
       |> indent_single
-  | Label l -> Printf.sprintf "L%d:" l
-  | Jump l -> Printf.sprintf "goto L%d" l |> indent_single
-  | CondJump (cond, l) -> Printf.sprintf "  if %s goto L%d" (prettify_operand cond) l
+  | Label l -> Printf.sprintf ".L%d:" l
+  | Jump l -> Printf.sprintf "goto .L%d" l |> indent_single
+  | CondJump (cond, l) ->
+      Printf.sprintf "if %s goto .L%d" (prettify_operand cond) l |> indent_single
   | Call (dest, func_id, args) ->
       let args_str = List.map prettify_operand args |> String.concat ", " in
       Printf.sprintf "%s <- call %%F%d, %s" (prettify_operand (Symbol dest)) func_id args_str
@@ -66,7 +68,7 @@ let prettify_tac_function (f : tac_function) =
     List.map (fun id -> prettify_operand (Symbol id)) f.func_params |> String.concat ", "
   in
   let body_str = List.map prettify_tac_instr f.func_body |> String.concat "\n" in
-  Printf.sprintf "func %s(%s):\n%s" f.func_name params_str body_str
+  Printf.sprintf "%s%%%d (%s):\n%s" f.func_name f.func_id params_str body_str
 
 let prettify_tac_program (p : tac_program) =
   let globals_str =

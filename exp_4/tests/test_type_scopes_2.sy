@@ -1,0 +1,40 @@
+int foo(int a, int b) {
+  const int C = 7;
+  int a;
+  int res;
+  int i;
+
+  a = b - 1;
+  res = 0;
+  i = 0;
+
+  while (i < b) {
+    res = res + i;
+
+    int res;
+    res = i * a;
+
+    if (res % 2 == 0) {
+      i = i + 1;
+      continue;
+    } else {
+      {
+        int a;
+        a = i + C;
+        if (a > 20) {
+          return a;
+        }
+      }
+
+      if (i > 100) {
+        break;
+      }
+
+      res = res + a;
+    }
+
+    i = i + 1;
+  }
+
+  return res + a;
+}

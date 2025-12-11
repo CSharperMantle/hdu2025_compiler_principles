@@ -15,6 +15,7 @@ type tac_instr =
   | MemWrite of int * operand * operand (* %0[%1] <- %2 *)
 
 type tac_function = {
+  func_id : int;
   func_name : string;
   func_params : int list;
   func_body : tac_instr list;
