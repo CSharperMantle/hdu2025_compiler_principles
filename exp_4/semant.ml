@@ -21,8 +21,14 @@ let int_type = scalar_type IntType
 let fallback_exp_attr = { ty = int_type; const_val = None }
 let fallback_texp = TIntLit 0
 
+type symbol_kind =
+  | Param
+  | Named
+  | Temp
+
 type translation_context = {
   names : name_entry StringMap.t;
+  var_kinds : symbol_kind IntMap.t;
   next_name_id : int;
   next_label_id : int;
   (* TODO: Hole for codegen *)
@@ -35,8 +41,28 @@ let alloc_name_id (ctx : translation_context) : int * translation_context =
 let alloc_label_id (ctx : translation_context) : int * translation_context =
   (ctx.next_label_id, { ctx with next_label_id = ctx.next_label_id + 1 })
 
+let alloc_named (name : string) (ty : sem_type) (kind : symbol_kind) (ctx : translation_context) :
+    int * translation_context =
+  let id, ctx = alloc_name_id ctx in
+  ( id,
+    {
+      ctx with
+      names = StringMap.add name (VarEntry { id; ty }) ctx.names;
+      var_kinds = IntMap.add id kind ctx.var_kinds;
+    } )
+
+let alloc_temp (ctx : translation_context) : int * translation_context =
+  let id, ctx = alloc_name_id ctx in
+  (id, { ctx with var_kinds = IntMap.add id Temp ctx.var_kinds })
+
 let empty_translation_context =
-  { names = StringMap.empty; next_name_id = 0; next_label_id = 0; ir = [] }
+  {
+    names = StringMap.empty;
+    var_kinds = IntMap.empty;
+    next_name_id = 0;
+    next_label_id = 0;
+    ir = [];
+  }
 
 (* Placeholder for codegen functions *)
 let gen_exp_hole (_e : t_exp) (ctx : translation_context) : translation_context = ctx
@@ -233,9 +259,7 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
     | d :: ds ->
         let* dims_vals, dims_exprs, ctx = eval_dims d.Ast.const_dims [] [] ctx in
         let* t_init, ctx = translate_const_init d.Ast.const_init ctx in
-        let new_id, ctx = alloc_name_id ctx in
-        let entry = VarEntry { ty = { elem_ty = ty; dims = dims_vals }; id = new_id } in
-        let ctx = { ctx with names = StringMap.add d.Ast.const_name entry ctx.names } in
+        let _, ctx = alloc_named d.Ast.const_name { elem_ty = ty; dims = dims_vals } Named ctx in
         let t_def =
           { t_const_name = d.Ast.const_name; t_const_dims = dims_exprs; t_const_init = t_init }
         in
@@ -252,10 +276,8 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
               agg_ok (Some t_i, ctx)
           | None -> agg_ok (None, ctx)
         in
-        let new_id, ctx = alloc_name_id ctx in
-        let entry = VarEntry { ty = { elem_ty = ty; dims = dims_vals }; id = new_id } in
+        let _, ctx = alloc_named d.Ast.var_name { elem_ty = ty; dims = dims_vals } Named ctx in
         let t_def = { t_var_name = d.Ast.var_name; t_var_dims = dims_exprs; t_var_init = t_init } in
-        let ctx = { ctx with names = StringMap.add d.Ast.var_name entry ctx.names } in
         add_var_defs ds ty (t_def :: acc_defs) ctx
   in
 
@@ -420,11 +442,7 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
             let entry = FunEntry { args = arg_types; ret = ret_ty; id = new_id } in
             let ctx = { ctx with names = StringMap.add f.Ast.func_name entry ctx.names } in
             let ctx_body =
-              List.fold_left
-                (fun ctx (n, t) ->
-                  let new_id, ctx = alloc_name_id ctx in
-                  { ctx with names = StringMap.add n (VarEntry { ty = t; id = new_id }) ctx.names })
-                ctx named_arg_types
+              List.fold_left (fun ctx (n, t) -> snd (alloc_named n t Param ctx)) ctx named_arg_types
             in
             let* t_body, _ = translate_block f.Ast.func_body ret_ty false ctx_body in
             let t_func =

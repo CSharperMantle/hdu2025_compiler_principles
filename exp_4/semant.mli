@@ -1,3 +1,4 @@
+open Common
 open Sem_ast
 
 (* Symbol table entry. *)
@@ -12,8 +13,14 @@ type name_entry =
       ret : b_type;
     }
 
+type symbol_kind =
+  | Param
+  | Named
+  | Temp
+
 type translation_context = {
-  names : name_entry Common.StringMap.t;
+  names : name_entry StringMap.t;
+  var_kinds : symbol_kind IntMap.t;
   next_name_id : int;
   next_label_id : int;
   (* TODO: Hole for codegen *)
