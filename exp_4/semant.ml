@@ -34,10 +34,17 @@ type translation_context = {
   next_label_id : int;
   current_ir : Tac.tac_instr list;
   functions : Tac.tac_function list;
+  loop_stack : (int * int) list;
 }
 
 let emit (instr : Tac.tac_instr) (ctx : translation_context) : translation_context =
   { ctx with current_ir = instr :: ctx.current_ir }
+
+let enter_loop (range : int * int) (ctx : translation_context) : translation_context =
+  { ctx with loop_stack = range :: ctx.loop_stack }
+
+let exit_loop (ctx : translation_context) : translation_context =
+  { ctx with loop_stack = List.tl ctx.loop_stack }
 
 let merge_sub_context (outer : translation_context) (inner : translation_context) :
     translation_context =
@@ -84,6 +91,7 @@ let empty_translation_context =
     next_label_id = 0;
     current_ir = [];
     functions = [];
+    loop_stack = [];
   }
 
 let rec gen_opnd_index (indices : t_exp list) (dims : int list) (ctx : translation_context) :
@@ -161,27 +169,30 @@ let rec gen_stmt (s : t_stmt) (ctx : translation_context) : translation_context 
         ctx items
   | TIf (cond, then_s, else_s_opt) ->
       let cond_opnd, ctx = gen_exp cond ctx in
-      let l_else, ctx = alloc_label_id ctx in
+      let l_then, ctx = alloc_label_id ctx in
       let l_end, ctx = alloc_label_id ctx in
-      let ctx =
-        ctx
-        |> emit (Tac.CondJump (cond_opnd, l_else))
-        |> gen_stmt then_s |> emit (Tac.Jump l_end) |> emit (Tac.Label l_else)
-      in
-      let ctx = map_or (fun else_s -> gen_stmt else_s ctx) ctx else_s_opt in
-      ctx |> emit (Tac.Label l_end)
+      let ctx = ctx |> emit (Tac.CondJump (cond_opnd, l_then)) in
+      map_or (fun else_s -> gen_stmt else_s ctx) ctx else_s_opt
+      |> emit (Tac.Jump l_end) |> emit (Tac.Label l_then) |> gen_stmt then_s
+      |> emit (Tac.Label l_end)
   | TWhile (cond, body) ->
       let l_start, ctx = alloc_label_id ctx in
       let l_body, ctx = alloc_label_id ctx in
       let l_end, ctx = alloc_label_id ctx in
-      let ctx = ctx |> emit (Tac.Label l_start) in
+      let ctx = ctx |> emit (Tac.Label l_start) |> enter_loop (l_start, l_end) in
       let cond_opnd, ctx = gen_exp cond ctx in
       ctx
       |> emit (Tac.CondJump (cond_opnd, l_body))
       |> emit (Tac.Jump l_end) |> emit (Tac.Label l_body) |> gen_stmt body
-      |> emit (Tac.Jump l_start) |> emit (Tac.Label l_end)
-  | TBreak -> failwith "todo"
-  | TContinue -> failwith "todo"
+      |> emit (Tac.Jump l_start) |> emit (Tac.Label l_end) |> exit_loop
+  | TBreak -> (
+      match ctx.loop_stack with
+      | (_, l_end) :: _ -> ctx |> emit (Tac.Jump l_end)
+      | [] -> internal_error "Break outside of loop")
+  | TContinue -> (
+      match ctx.loop_stack with
+      | (l_start, _) :: _ -> ctx |> emit (Tac.Jump l_start)
+      | [] -> internal_error "Continue outside of loop")
   | TReturn (Some e) ->
       let opnd, ctx = gen_exp e ctx in
       ctx |> emit (Tac.Return (Some opnd))

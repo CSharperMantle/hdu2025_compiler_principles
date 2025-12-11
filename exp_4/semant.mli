@@ -26,6 +26,7 @@ type translation_context = {
   next_label_id : int;
   current_ir : Tac.tac_instr list;
   functions : Tac.tac_function list;
+  loop_stack : (int * int) list; (* A list of (l_start, l_end). *)
 }
 
 val empty_translation_context : translation_context

@@ -45,9 +45,8 @@ let prettify_tac_instr = function
       Printf.sprintf "%s <- %s" (prettify_operand (Symbol dest)) (prettify_operand src)
       |> indent_single
   | Label l -> Printf.sprintf ".L%d:" l
-  | Jump l -> Printf.sprintf "goto .L%d" l |> indent_single
-  | CondJump (cond, l) ->
-      Printf.sprintf "if %s goto .L%d" (prettify_operand cond) l |> indent_single
+  | Jump l -> Printf.sprintf "jmp .L%d" l |> indent_single
+  | CondJump (cond, l) -> Printf.sprintf "jc %s, .L%d" (prettify_operand cond) l |> indent_single
   | Call (dest, func_id, args) ->
       let args_str = List.map prettify_operand args |> String.concat ", " in
       Printf.sprintf "%s <- call %%F%d, %s" (prettify_operand (Symbol dest)) func_id args_str
