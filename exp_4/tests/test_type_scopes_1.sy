@@ -1,0 +1,7 @@
+void foo(int a) {
+    int x = 0;
+}
+
+void bar(int a) {
+    int x = 0;
+}

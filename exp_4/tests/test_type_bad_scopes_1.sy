@@ -1,0 +1,16 @@
+void foo(int a) {
+    int x = 0;
+    {
+        int y = 1;
+    }
+    int y = 2;
+}
+
+void bar(int a) {
+    int x = 0;
+    {
+        int y = 1;
+    }
+    int z = 2;
+    y = 3;
+}

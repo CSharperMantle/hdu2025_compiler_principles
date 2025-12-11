@@ -9,7 +9,7 @@ type tac_instr =
   | Label of int (* %L0: *)
   | Jump of int (* goto %L0 *)
   | CondJump of operand * int (* if %0 goto %L1 *)
-  | Call of int option * int * operand list (* %0 <- call %1, ...%2 *)
+  | Call of int * int * operand list (* %0 <- call %1, ...%2 *)
   | Return of operand option (* ret %0 *)
   | MemRead of int * int * operand (* %0 <- %1[%2] *)
   | MemWrite of int * operand * operand (* %0[%1] <- %2 *)

@@ -32,6 +32,7 @@ type t_init_val =
 
 (* Typed counterpart of Ast.const_def. *)
 type t_const_def = {
+  t_const_id : int;
   t_const_name : string;
   t_const_dims : t_exp list;
   t_const_init : t_const_init_val;
@@ -39,6 +40,7 @@ type t_const_def = {
 
 (* Typed counterpart of Ast.var_def. *)
 type t_var_def = {
+  t_var_id : int;
   t_var_name : string;
   t_var_dims : t_exp list;
   t_var_init : t_init_val option;
@@ -51,7 +53,7 @@ type t_decl =
 
 (* Typed counterpart of Ast.stmt. *)
 and t_stmt =
-  | TAssign of string * t_exp list * t_exp
+  | TAssign of int * string * t_exp list * t_exp
   | TExprStmt of t_exp option
   | TBlock of t_block_item list
   | TIf of t_exp * t_stmt * t_stmt option
@@ -67,6 +69,7 @@ and t_block_item =
 
 (* Typed counterpart of Ast.func_param. *)
 type t_func_param = {
+  t_param_id : int;
   t_param_type : b_type;
   t_param_name : string;
   t_param_dims : t_exp list option;
@@ -74,6 +77,7 @@ type t_func_param = {
 
 (* Typed counterpart of Ast.func_def. *)
 type t_func_def = {
+  t_func_id : int;
   t_func_ret_type : b_type option;
   t_func_name : string;
   t_func_params : t_func_param list;

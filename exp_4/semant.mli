@@ -23,8 +23,7 @@ type translation_context = {
   var_kinds : symbol_kind IntMap.t;
   next_name_id : int;
   next_label_id : int;
-  (* TODO: Hole for codegen *)
-  ir : unit list;
+  ir : Tac.tac_instr list;
 }
 
 val empty_translation_context : translation_context

@@ -1,3 +1,4 @@
+open Exp_4
 open Parser.MenhirInterpreter
 open Util
 
@@ -127,10 +128,12 @@ let usage () =
   Printf.eprintf "usage: %s <lex|parse|type> <source-file>\n" Sys.argv.(0);
   exit 1
 
-let () =
+let main () =
   if Array.length Sys.argv < 3 then usage ();
   let cmd = String.trim Sys.argv.(1) in
   if cmd = "lex" then lex_file Sys.argv.(2)
   else if cmd = "parse" then parse_file Sys.argv.(2)
   else if cmd = "type" then type_file Sys.argv.(2)
   else usage ()
+
+let () = if not !Sys.interactive then main ()

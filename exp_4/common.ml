@@ -23,3 +23,4 @@ module AggResult = struct
 end
 
 let indent (lines : string list) : string list = List.map (fun l -> "  " ^ l) lines
+let internal_error (msg : string) : 'a = failwith (Printf.sprintf "Internal error: %s" msg)

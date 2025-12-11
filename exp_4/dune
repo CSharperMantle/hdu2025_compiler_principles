@@ -12,9 +12,8 @@
   (explain true)
   (infer true))
 
-(executable
-  (name main)
-  (public_name exp_4)
+(library
+  (name exp_4)
   (libraries menhirLib)
   (modules
     common
@@ -25,8 +24,13 @@
     parser
     sem_ast
     tac
-    semant
-    main)
+    semant))
+
+(executable
+  (name main)
+  (public_name exp_4)
+  (libraries exp_4 menhirLib)
+  (modules main)
   (modes native)
   (flags (:standard
     -warn-error -27
