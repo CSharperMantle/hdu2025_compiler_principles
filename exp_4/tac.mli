@@ -1,7 +1,7 @@
 open Common
 
 type operand =
-  | Symbol of int
+  | Object of int
   | Const of int
   | ConstFloat of float
 
@@ -10,7 +10,7 @@ type tac_elem_type =
   | Float
   | Void
 
-type tac_symbol_type = {
+type tac_obj_type = {
   elem_ty : tac_elem_type;
   is_array : bool;
 }
@@ -37,13 +37,13 @@ type tac_function = {
   func_params : int list;
   func_body : tac_instr list;
   func_ret_type : tac_elem_type;
-  func_symbol_types : tac_symbol_type IntMap.t;
+  func_obj_types : tac_obj_type IntMap.t;
 }
 
 type tac_program = {
   globals : int list;
   functions : tac_function list;
-  symbols : tac_symbol_type IntMap.t;
+  objects : tac_obj_type IntMap.t;
 }
 
 val prettify_tac_function : tac_function -> string

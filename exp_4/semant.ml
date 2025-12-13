@@ -10,13 +10,13 @@ let tac_elem_type_of = function
   | FloatType -> Tac.Float
   | VoidType -> Tac.Void
 
-(* Symbol table entry. *)
+(* Name table entry. *)
 type name_entry =
   | VarEntry of {
       id : int;
       ty : sem_type;
     }
-  | FunEntry of {
+  | FuncEntry of {
       id : int;
       args : sem_type list;
       ret : b_type;
@@ -28,26 +28,20 @@ let float_type = scalar_type_of FloatType
 let fallback_exp_attr = { ty = int_type; const_val = None }
 let fallback_texp = TIntLit 0
 
-type symbol_kind =
+type obj_kind =
   | Param
   | Named
   | Temp
 
 (*
   The translation context.
-
-  Some quirks:
-    * Functions and objects are both "sym", so `next_name_id` track them all.
-    * `sym_kinds` contains functions, but `sym_tys` don't.
-    * `names` contains named variables and functions.
-  TODO:
-    * Separate functions from objects.
 *)
 type translation_context = {
   names : name_entry StringMap.t;
-  sym_kinds : symbol_kind IntMap.t;
-  sym_tys : sem_type IntMap.t;
-  next_name_id : int;
+  obj_kinds : obj_kind IntMap.t;
+  obj_tys : sem_type IntMap.t;
+  next_obj_id : int;
+  next_func_id : int;
   next_label_id : int;
   current_ir : Tac.tac_instr list;
   functions : Tac.tac_function list;
@@ -68,8 +62,8 @@ let exit_loop (ctx : translation_context) : translation_context =
   Helper function for merging a sub-block's translation context into its parent context.
 
   Preserved sub->parent:
-    * sym_tys -- for keep uniquely-identified temporaries
-    * next_name_id, next_label_id -- for allocation
+    * obj_tys -- for keep uniquely-identified temporaries
+    * next_*_id -- for allocation
     * current_ir -- for code generation
 *)
 let merge_sub_block_context (inner : translation_context) (outer : translation_context) :
@@ -81,19 +75,20 @@ let merge_sub_block_context (inner : translation_context) (outer : translation_c
   else
     {
       outer with
-      sym_tys = IntMap.union (fun _ v_outer _ -> Some v_outer) outer.sym_tys inner.sym_tys;
-      next_name_id = inner.next_name_id;
+      obj_tys = IntMap.union (fun _ v_outer _ -> Some v_outer) outer.obj_tys inner.obj_tys;
+      next_obj_id = inner.next_obj_id;
+      next_func_id = inner.next_func_id;
       next_label_id = inner.next_label_id;
       current_ir = inner.current_ir @ outer.current_ir;
     }
 
 (*
   Helper function for merging a function body's translation context into its parent context.
-  
+
   Allocate a new name_entry in the outer context, then add the assembled IR (from the body context)
   to the outer functions.
 *)
-let merge_fun_context (id : int) (ast_node : Ast.func_def) (t_params : t_func_param list)
+let merge_func_context (id : int) (ast_node : Ast.func_def) (t_params : t_func_param list)
     (arg_tys : sem_type list) (ret_ty : b_type) (body : translation_context)
     (outer : translation_context) : translation_context =
   let tac_func =
@@ -103,65 +98,70 @@ let merge_fun_context (id : int) (ast_node : Ast.func_def) (t_params : t_func_pa
       func_params = List.map (fun p -> p.t_param_id) t_params;
       func_body = List.rev body.current_ir;
       func_ret_type = tac_elem_type_of ret_ty;
-      func_symbol_types =
+      func_obj_types =
         IntMap.map
           (fun v -> { Tac.elem_ty = tac_elem_type_of v.elem_ty; is_array = v.dims <> [] })
-          body.sym_tys;
+          body.obj_tys;
     }
   in
   {
     outer with
     names =
       StringMap.add ast_node.Ast.func_name
-        (FunEntry { id; args = arg_tys; ret = ret_ty })
+        (FuncEntry { id; args = arg_tys; ret = ret_ty })
         outer.names;
-    next_name_id = body.next_name_id;
+    next_obj_id = body.next_obj_id;
+    next_func_id = body.next_func_id;
     next_label_id = body.next_label_id;
     functions = tac_func :: outer.functions;
   }
 
-let alloc_name_id (ctx : translation_context) : int * translation_context =
-  (ctx.next_name_id, { ctx with next_name_id = ctx.next_name_id + 1 })
+let alloc_obj_id (ctx : translation_context) : int * translation_context =
+  (ctx.next_obj_id, { ctx with next_obj_id = ctx.next_obj_id + 1 })
+
+let alloc_func_id (ctx : translation_context) : int * translation_context =
+  (ctx.next_func_id, { ctx with next_func_id = ctx.next_func_id + 1 })
 
 let alloc_label_id (ctx : translation_context) : int * translation_context =
   (ctx.next_label_id, { ctx with next_label_id = ctx.next_label_id + 1 })
 
-let alloc_named (name : string) (ty : sem_type) (kind : symbol_kind) (ctx : translation_context) :
+let alloc_named_obj (name : string) (ty : sem_type) (kind : obj_kind) (ctx : translation_context) :
     int * translation_context =
-  let id, ctx = alloc_name_id ctx in
+  let id, ctx = alloc_obj_id ctx in
   ( id,
     {
       ctx with
       names = StringMap.add name (VarEntry { id; ty }) ctx.names;
-      sym_kinds = IntMap.add id kind ctx.sym_kinds;
-      sym_tys = IntMap.add id ty ctx.sym_tys;
+      obj_kinds = IntMap.add id kind ctx.obj_kinds;
+      obj_tys = IntMap.add id ty ctx.obj_tys;
     } )
 
 let alloc_func (name : string) (args : sem_type list) (ret : b_type) (ctx : translation_context) :
     int * translation_context =
-  let id, ctx = alloc_name_id ctx in
+  let id, ctx = alloc_func_id ctx in
   ( id,
     {
       ctx with
-      names = StringMap.add name (FunEntry { id; args; ret }) ctx.names;
+      names = StringMap.add name (FuncEntry { id; args; ret }) ctx.names;
       current_ret_ty = ret;
     } )
 
-let alloc_temp (ty : sem_type) (ctx : translation_context) : int * translation_context =
-  let id, ctx = alloc_name_id ctx in
+let alloc_temp_obj (ty : sem_type) (ctx : translation_context) : int * translation_context =
+  let id, ctx = alloc_obj_id ctx in
   ( id,
     {
       ctx with
-      sym_kinds = IntMap.add id Temp ctx.sym_kinds;
-      sym_tys = IntMap.add id ty ctx.sym_tys;
+      obj_kinds = IntMap.add id Temp ctx.obj_kinds;
+      obj_tys = IntMap.add id ty ctx.obj_tys;
     } )
 
 let empty_translation_context =
   {
     names = StringMap.empty;
-    sym_kinds = IntMap.empty;
-    sym_tys = IntMap.empty;
-    next_name_id = 0;
+    obj_kinds = IntMap.empty;
+    obj_tys = IntMap.empty;
+    next_obj_id = 0;
+    next_func_id = 0;
     next_label_id = 0;
     current_ir = [];
     functions = [];
@@ -181,19 +181,19 @@ let coerce_type (opnd : Tac.operand) (dst_ty : b_type) (src_ty : b_type) (ctx : 
   match (dst_ty, src_ty) with
   | t1, t2 when t1 = t2 -> (opnd, ctx)
   | IntType, FloatType ->
-      let temp, ctx = alloc_temp int_type ctx in
+      let temp, ctx = alloc_temp_obj int_type ctx in
       let instr = Tac.FloatToInt (temp, opnd) in
-      (Tac.Symbol temp, emit instr ctx)
+      (Tac.Object temp, emit instr ctx)
   | FloatType, IntType ->
-      let temp, ctx = alloc_temp float_type ctx in
+      let temp, ctx = alloc_temp_obj float_type ctx in
       let instr = Tac.IntToFloat (temp, opnd) in
-      (Tac.Symbol temp, emit instr ctx)
+      (Tac.Object temp, emit instr ctx)
   | _ -> internal_error "Cannot coerce between these types"
 
-let find_sym_type (id : int) (ctx : translation_context) : sem_type =
-  match IntMap.find_opt id ctx.sym_tys with
+let find_obj_type (id : int) (ctx : translation_context) : sem_type =
+  match IntMap.find_opt id ctx.obj_tys with
   | Some ty -> ty
-  | None -> internal_error (Printf.sprintf "Symbol %d not found in type table" id)
+  | None -> internal_error (Printf.sprintf "Object %d not found in type table" id)
 
 let rec gen_opnd_index (indices : t_exp list) (dims : int list) (ctx : translation_context) :
     Tac.operand * translation_context =
@@ -202,11 +202,11 @@ let rec gen_opnd_index (indices : t_exp list) (dims : int list) (ctx : translati
        (fun (acc, ctx) (i, n) ->
          let opnd, opnd_ty, ctx = gen_exp i ctx in
          let opnd, ctx = coerce_type opnd IntType opnd_ty.elem_ty ctx in
-         let temp_mul, ctx = alloc_temp int_type ctx in
+         let temp_mul, ctx = alloc_temp_obj int_type ctx in
          let mul = Tac.BinOp (temp_mul, Ast.Mul, acc, Tac.Const n) in
-         let temp_add, ctx = alloc_temp int_type ctx in
-         let add = Tac.BinOp (temp_add, Ast.Add, Tac.Symbol temp_mul, opnd) in
-         (Tac.Symbol temp_add, ctx |> emit mul |> emit add))
+         let temp_add, ctx = alloc_temp_obj int_type ctx in
+         let add = Tac.BinOp (temp_add, Ast.Add, Tac.Object temp_mul, opnd) in
+         (Tac.Object temp_add, ctx |> emit mul |> emit add))
        (Tac.Const 0, ctx)
 
 and gen_exp (exp : t_exp) (ctx : translation_context) : Tac.operand * sem_type * translation_context
@@ -214,17 +214,17 @@ and gen_exp (exp : t_exp) (ctx : translation_context) : Tac.operand * sem_type *
   match exp with
   | TIntLit n -> (Tac.Const n, int_type, ctx)
   | TVar (id, _, [], _) ->
-      let ty = find_sym_type id ctx in
-      (Tac.Symbol id, ty, ctx)
+      let ty = find_obj_type id ctx in
+      (Tac.Object id, ty, ctx)
   | TVar (id, _, indices, ty) ->
-      let dims = (find_sym_type id ctx).dims in
+      let dims = (find_obj_type id ctx).dims in
       let opnd_index, ctx = gen_opnd_index indices dims ctx in
-      let temp, ctx = alloc_temp ty ctx in
+      let temp, ctx = alloc_temp_obj ty ctx in
       let rd = Tac.MemRead (temp, id, opnd_index) in
-      (Tac.Symbol temp, ty, ctx |> emit rd)
+      (Tac.Object temp, ty, ctx |> emit rd)
   | TUnary (op, e, res_ty) ->
       let opnd, sub_ty, ctx = gen_exp e ctx in
-      let temp, ctx = alloc_temp res_ty ctx in
+      let temp, ctx = alloc_temp_obj res_ty ctx in
       let instr =
         match op with
         | Ast.Not -> Tac.UnaryOp (temp, op, opnd)
@@ -232,7 +232,7 @@ and gen_exp (exp : t_exp) (ctx : translation_context) : Tac.operand * sem_type *
             if sub_ty.elem_ty = FloatType then Tac.FUnaryOp (temp, op, opnd)
             else Tac.UnaryOp (temp, op, opnd)
       in
-      (Tac.Symbol temp, res_ty, ctx |> emit instr)
+      (Tac.Object temp, res_ty, ctx |> emit instr)
   | TBinary (op, e1, e2, res_ty) ->
       let opnd1, ty1, ctx = gen_exp e1 ctx in
       let opnd2, ty2, ctx = gen_exp e2 ctx in
@@ -241,16 +241,16 @@ and gen_exp (exp : t_exp) (ctx : translation_context) : Tac.operand * sem_type *
       in
       let opnd1, ctx = coerce_type opnd1 target_ty ty1.elem_ty ctx in
       let opnd2, ctx = coerce_type opnd2 target_ty ty2.elem_ty ctx in
-      let temp, ctx = alloc_temp res_ty ctx in
+      let temp, ctx = alloc_temp_obj res_ty ctx in
       let instr =
         if target_ty = FloatType then Tac.FBinOp (temp, op, opnd1, opnd2)
         else Tac.BinOp (temp, op, opnd1, opnd2)
       in
-      (Tac.Symbol temp, res_ty, ctx |> emit instr)
+      (Tac.Object temp, res_ty, ctx |> emit instr)
   | TCall (func_id, name, params, ret_ty) ->
       let args =
         match StringMap.find_opt name ctx.names with
-        | Some (FunEntry f) -> f.args
+        | Some (FuncEntry f) -> f.args
         | _ -> internal_error "Function not found"
       in
       let param_opnds, ctx =
@@ -261,20 +261,20 @@ and gen_exp (exp : t_exp) (ctx : translation_context) : Tac.operand * sem_type *
             (opnd :: opnds, ctx))
           ([], ctx) params args
       in
-      let ret_temp, ctx = alloc_temp ret_ty ctx in
+      let ret_temp, ctx = alloc_temp_obj ret_ty ctx in
       let call = Tac.Call (ret_temp, func_id, List.rev param_opnds) in
-      (Tac.Symbol ret_temp, ret_ty, ctx |> emit call)
+      (Tac.Object ret_temp, ret_ty, ctx |> emit call)
 
 let rec gen_stmt (s : t_stmt) (ctx : translation_context) : translation_context =
   match s with
   | TAssign (id, _, [], rhs) ->
       let rhs_opnd, rhs_ty, ctx = gen_exp rhs ctx in
-      let lhs_ty = find_sym_type id ctx in
+      let lhs_ty = find_obj_type id ctx in
       let rhs_opnd, ctx = coerce_type rhs_opnd lhs_ty.elem_ty rhs_ty.elem_ty ctx in
       let instr = Tac.Move (id, rhs_opnd) in
       { ctx with current_ir = instr :: ctx.current_ir }
   | TAssign (id, _, indices, rhs) ->
-      let lhs_ty = find_sym_type id ctx in
+      let lhs_ty = find_obj_type id ctx in
       let rhs_opnd, rhs_ty, ctx = gen_exp rhs ctx in
       let rhs_opnd, ctx = coerce_type rhs_opnd lhs_ty.elem_ty rhs_ty.elem_ty ctx in
       let opnd_index, ctx = gen_opnd_index indices lhs_ty.dims ctx in
@@ -360,11 +360,11 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
     match StringMap.find_opt name ctx.names with
     | None ->
         (* Add a fallback entry for undefined variable. *)
-        let id, ctx = alloc_named name int_type Named ctx in
+        let id, ctx = alloc_named_obj name int_type Named ctx in
         agg_error
           (Printf.sprintf "Undefined variable `%s`" name)
           (TVar (id, name, [], int_type), { ty = int_type; const_val = None }, ctx)
-    | Some (FunEntry _) ->
+    | Some (FuncEntry _) ->
         agg_error
           (Printf.sprintf "`%s` is a function, not a variable" name)
           (fallback_texp, fallback_exp_attr, ctx)
@@ -438,7 +438,7 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
         agg_error
           (Printf.sprintf "`%s` is a variable, not a function" name)
           (fallback_texp, fallback_exp_attr, ctx)
-    | Some (FunEntry f) ->
+    | Some (FuncEntry f) ->
         let* param_exprs, ctx = translate_args params f.args ctx in
         let ret_ty = scalar_type_of f.ret in
         let result_expr = TCall (f.id, name, param_exprs, ret_ty)
@@ -513,7 +513,9 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
     | d :: ds ->
         let* dims_vals, dims_exprs, ctx = eval_dims d.Ast.const_dims [] [] ctx in
         let* t_init, ctx = translate_const_init d.Ast.const_init ctx in
-        let id, ctx = alloc_named d.Ast.const_name { elem_ty = ty; dims = dims_vals } Named ctx in
+        let id, ctx =
+          alloc_named_obj d.Ast.const_name { elem_ty = ty; dims = dims_vals } Named ctx
+        in
         let t_def =
           {
             t_const_id = id;
@@ -535,7 +537,7 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
               agg_ok (Some t_i, ctx)
           | None -> agg_ok (None, ctx)
         in
-        let id, ctx = alloc_named d.Ast.var_name { elem_ty = ty; dims = dims_vals } Named ctx in
+        let id, ctx = alloc_named_obj d.Ast.var_name { elem_ty = ty; dims = dims_vals } Named ctx in
         let init_stmt =
           match t_init with
           | Some (TInitExp init_exp) -> Some (TAssign (id, d.Ast.var_name, dims_exprs, init_exp))
@@ -689,7 +691,7 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
                         agg_ok (0 :: d_vals, Some d_exprs, ctx)
                   in
                   let arg_ty = { elem_ty = ty; dims = dims_vals } in
-                  let id, ctx = alloc_named p.param_name arg_ty Param ctx in
+                  let id, ctx = alloc_named_obj p.param_name arg_ty Param ctx in
                   let t_param =
                     {
                       t_param_id = id;
@@ -705,7 +707,7 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
             let func_id, ctx_body = alloc_func f.Ast.func_name arg_tys ret_ty ctx_params in
             let* t_body, ctx_body = translate_block_items f.Ast.func_body ret_ty false ctx_body in
             let ctx_body = gen_stmt (TBlock t_body) ctx_body in
-            let ctx = merge_fun_context func_id f t_params arg_tys ret_ty ctx_body ctx in
+            let ctx = merge_func_context func_id f t_params arg_tys ret_ty ctx_body ctx in
             let* rest_items, ctx = translate_comp_unit_item_list rest ctx in
             let t_func =
               {
@@ -721,17 +723,17 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
   let result =
     let* comp_unit, ctx = translate_comp_unit_item_list comp_unit ctx in
     let globals =
-      IntMap.bindings ctx.sym_kinds
+      IntMap.bindings ctx.obj_kinds
       |> List.filter_map (fun (id, kind) -> if kind = Named then Some id else None)
     in
-    let symbols =
-      IntMap.bindings ctx.sym_tys
+    let objects =
+      IntMap.bindings ctx.obj_tys
       |> List.map (fun (id, ty) ->
           let elem_ty = tac_elem_type_of ty.elem_ty in
           (id, { Tac.elem_ty; is_array = ty.dims <> [] }))
       |> List.to_seq |> IntMap.of_seq
     in
-    let program = { Tac.globals; functions = List.rev ctx.functions; symbols } in
+    let program = { Tac.globals; functions = List.rev ctx.functions; objects } in
     agg_ok (comp_unit, program)
   in
   agg_to_result result
