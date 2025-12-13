@@ -24,7 +24,13 @@
     parser
     sem_ast
     tac
-    semant))
+    semant)
+  (flags (:standard
+    -warn-error -27
+    -warn-error -26
+    -warn-error -32
+    -warn-error -33))
+  (ocamlopt_flags (:standard -g)))
 
 (executable
   (name main)
@@ -32,9 +38,4 @@
   (libraries exp_4 menhirLib)
   (modules main)
   (modes native)
-  (flags (:standard
-    -warn-error -27
-    -warn-error -26
-    -warn-error -32
-    -warn-error -33))
   (ocamlopt_flags (:standard -g)))
