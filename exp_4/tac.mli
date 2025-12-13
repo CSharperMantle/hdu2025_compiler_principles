@@ -36,6 +36,8 @@ type tac_function = {
   func_name : string;
   func_params : int list;
   func_body : tac_instr list;
+  func_ret_type : tac_elem_type;
+  func_symbol_types : tac_symbol_type IntMap.t;
 }
 
 type tac_program = {

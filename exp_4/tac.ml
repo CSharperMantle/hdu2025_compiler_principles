@@ -10,10 +10,18 @@ type tac_elem_type =
   | Float
   | Void
 
+let string_of_tac_elem_type = function
+  | Int -> "int"
+  | Float -> "float"
+  | Void -> "void"
+
 type tac_symbol_type = {
   elem_ty : tac_elem_type;
   is_array : bool;
 }
+
+let prettify_tac_symbol_type (ty : tac_symbol_type) : string =
+  Printf.sprintf "%s%s" (string_of_tac_elem_type ty.elem_ty) (if ty.is_array then "[]" else "")
 
 type tac_instr =
   | BinOp of int * Ast.bin_op * operand * operand
@@ -36,6 +44,8 @@ type tac_function = {
   func_name : string;
   func_params : int list;
   func_body : tac_instr list;
+  func_ret_type : tac_elem_type;
+  func_symbol_types : tac_symbol_type IntMap.t;
 }
 
 type tac_program = {
@@ -53,54 +63,59 @@ let prettify_tac_instr = function
   | BinOp (dest, op, src1, src2) ->
       Printf.sprintf "%s <- %s %s.d %s" (prettify_operand (Symbol dest)) (prettify_operand src1)
         (Ast.prettify_bin_op op) (prettify_operand src2)
-      |> indent_single
   | FBinOp (dest, op, src1, src2) ->
       Printf.sprintf "%s <- %s %s.f %s" (prettify_operand (Symbol dest)) (prettify_operand src1)
         (Ast.prettify_bin_op op) (prettify_operand src2)
-      |> indent_single
   | UnaryOp (dest, op, src) ->
       Printf.sprintf "%s <- %s.d %s" (prettify_operand (Symbol dest)) (Ast.prettify_unary_op op)
         (prettify_operand src)
-      |> indent_single
   | FUnaryOp (dest, op, src) ->
       Printf.sprintf "%s <- %s.f %s" (prettify_operand (Symbol dest)) (Ast.prettify_unary_op op)
         (prettify_operand src)
-      |> indent_single
   | Move (dest, src) ->
       Printf.sprintf "%s <- %s" (prettify_operand (Symbol dest)) (prettify_operand src)
-      |> indent_single
   | IntToFloat (dest, src) ->
       Printf.sprintf "%s <- %s.f" (prettify_operand (Symbol dest)) (prettify_operand src)
-      |> indent_single
   | FloatToInt (dest, src) ->
       Printf.sprintf "%s <- %s.d" (prettify_operand (Symbol dest)) (prettify_operand src)
-      |> indent_single
   | Label l -> Printf.sprintf ".L%d:" l
-  | Jump l -> Printf.sprintf "jmp .L%d" l |> indent_single
-  | CondJump (cond, l) -> Printf.sprintf "jc %s, .L%d" (prettify_operand cond) l |> indent_single
+  | Jump l -> Printf.sprintf "jmp .L%d" l
+  | CondJump (cond, l) -> Printf.sprintf "jc %s, .L%d" (prettify_operand cond) l
   | Call (dest, func_id, args) ->
       let args_str = List.map prettify_operand args |> String.concat ", " in
       Printf.sprintf "%s <- call %%F%d, %s" (prettify_operand (Symbol dest)) func_id args_str
-      |> indent_single
-  | Return (Some op) -> Printf.sprintf "ret %s" (prettify_operand op) |> indent_single
-  | Return None -> "ret" |> indent_single
+  | Return (Some op) -> Printf.sprintf "ret %s" (prettify_operand op)
+  | Return None -> "ret"
   | MemRead (dest, base, offset) ->
       Printf.sprintf "%s <- %s[%s]" (prettify_operand (Symbol dest))
         (prettify_operand (Symbol base)) (prettify_operand offset)
-      |> indent_single
   | MemWrite (base, offset, src) ->
       Printf.sprintf "%s[%s] <- %s" (prettify_operand (Symbol base)) (prettify_operand offset)
         (prettify_operand src)
-      |> indent_single
 
-let prettify_tac_function (f : tac_function) =
+let prettify_symbol_type (id : int) (ty : tac_symbol_type) =
+  Printf.sprintf "%s: %s" (prettify_operand (Symbol id)) (prettify_tac_symbol_type ty)
+
+let prettify_tac_function (f : tac_function) : string =
   let params_str =
     List.map (fun id -> prettify_operand (Symbol id)) f.func_params |> String.concat ", "
-  in
-  let body_str = List.map prettify_tac_instr f.func_body |> String.concat "\n" in
-  Printf.sprintf "%s%%%d (%s):\n%s" f.func_name f.func_id params_str body_str
+  and symbol_types_str =
+    IntMap.mapi (fun id ty -> prettify_symbol_type id ty) f.func_symbol_types
+    |> IntMap.to_list |> List.map snd |> indent |> String.concat "\n"
+  and body_str =
+    List.map
+      (fun instr ->
+        let s = prettify_tac_instr instr in
+        match instr with
+        | Label _ -> s
+        | _ -> indent_single s)
+      f.func_body
+    |> String.concat "\n"
+  and ret_type_str = string_of_tac_elem_type f.func_ret_type in
+  Printf.sprintf "%s%%%d (%s) -> %s:\n%s\n\n%s" f.func_name f.func_id params_str ret_type_str
+    symbol_types_str body_str
 
-let prettify_tac_program (p : tac_program) =
+let prettify_tac_program (p : tac_program) : string =
   let globals_str =
     "globals: " ^ (List.map (fun id -> prettify_operand (Symbol id)) p.globals |> String.concat ", ")
   in

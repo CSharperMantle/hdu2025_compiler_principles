@@ -5,6 +5,11 @@ open Sem_ast
 
 (* type semant_error = string *)
 
+let tac_elem_type_of = function
+  | IntType -> Tac.Int
+  | FloatType -> Tac.Float
+  | VoidType -> Tac.Void
+
 (* Symbol table entry. *)
 type name_entry =
   | VarEntry of {
@@ -73,7 +78,8 @@ let merge_sub_block_context (inner : translation_context) (outer : translation_c
 
 (*
   Helper function for merging a function body's translation context into its parent context.
-  Allocate a new name_entry in the outer context, then add the assembled IR (from the body context) to the outer functions.
+  Allocate a new name_entry in the outer context, then add the assembled IR (from the body context)
+  to the outer functions.
 *)
 let merge_fun_context (id : int) (ast_node : Ast.func_def) (t_params : t_func_param list)
     (arg_tys : sem_type list) (ret_ty : b_type) (body : translation_context)
@@ -84,13 +90,19 @@ let merge_fun_context (id : int) (ast_node : Ast.func_def) (t_params : t_func_pa
       Tac.func_name = ast_node.Ast.func_name;
       func_params = List.map (fun p -> p.t_param_id) t_params;
       func_body = List.rev body.current_ir;
+      func_ret_type = tac_elem_type_of ret_ty;
+      func_symbol_types =
+        IntMap.map
+          (fun v -> { Tac.elem_ty = tac_elem_type_of v.elem_ty; is_array = v.dims <> [] })
+          body.sym_tys;
     }
-  and names =
-    StringMap.add ast_node.Ast.func_name (FunEntry { id; args = arg_tys; ret = ret_ty }) outer.names
   in
   {
     outer with
-    names;
+    names =
+      StringMap.add ast_node.Ast.func_name
+        (FunEntry { id; args = arg_tys; ret = ret_ty })
+        outer.names;
     next_name_id = body.next_name_id;
     next_label_id = body.next_label_id;
     functions = tac_func :: outer.functions;
@@ -697,12 +709,7 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
     let symbols =
       IntMap.bindings ctx.sym_tys
       |> List.map (fun (id, ty) ->
-          let elem_ty =
-            match ty.elem_ty with
-            | IntType -> Tac.Int
-            | FloatType -> Tac.Float
-            | VoidType -> Tac.Void
-          in
+          let elem_ty = tac_elem_type_of ty.elem_ty in
           (id, { Tac.elem_ty; is_array = ty.dims <> [] }))
       |> List.to_seq |> IntMap.of_seq
     in
