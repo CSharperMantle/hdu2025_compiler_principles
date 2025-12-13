@@ -3,11 +3,26 @@ open Common
 type operand =
   | Symbol of int
   | Const of int
+  | ConstFloat of float
+
+type tac_elem_type =
+  | Int
+  | Float
+  | Void
+
+type tac_symbol_type = {
+  elem_ty : tac_elem_type;
+  is_array : bool;
+}
 
 type tac_instr =
   | BinOp of int * Ast.bin_op * operand * operand
+  | FBinOp of int * Ast.bin_op * operand * operand
   | UnaryOp of int * Ast.unary_op * operand
+  | FUnaryOp of int * Ast.unary_op * operand
   | Move of int * operand
+  | IntToFloat of int * operand
+  | FloatToInt of int * operand
   | Label of int
   | Jump of int
   | CondJump of operand * int
@@ -26,23 +41,39 @@ type tac_function = {
 type tac_program = {
   globals : int list;
   functions : tac_function list;
+  symbols : tac_symbol_type IntMap.t;
 }
 
 let prettify_operand = function
   | Symbol id -> Printf.sprintf "%%%d" id
   | Const c -> string_of_int c
+  | ConstFloat f -> string_of_float f
 
 let prettify_tac_instr = function
   | BinOp (dest, op, src1, src2) ->
-      Printf.sprintf "%s <- %s %s %s" (prettify_operand (Symbol dest)) (prettify_operand src1)
+      Printf.sprintf "%s <- %s %s.d %s" (prettify_operand (Symbol dest)) (prettify_operand src1)
+        (Ast.prettify_bin_op op) (prettify_operand src2)
+      |> indent_single
+  | FBinOp (dest, op, src1, src2) ->
+      Printf.sprintf "%s <- %s %s.f %s" (prettify_operand (Symbol dest)) (prettify_operand src1)
         (Ast.prettify_bin_op op) (prettify_operand src2)
       |> indent_single
   | UnaryOp (dest, op, src) ->
-      Printf.sprintf "%s <- %s %s" (prettify_operand (Symbol dest)) (Ast.prettify_unary_op op)
+      Printf.sprintf "%s <- %s.d %s" (prettify_operand (Symbol dest)) (Ast.prettify_unary_op op)
+        (prettify_operand src)
+      |> indent_single
+  | FUnaryOp (dest, op, src) ->
+      Printf.sprintf "%s <- %s.f %s" (prettify_operand (Symbol dest)) (Ast.prettify_unary_op op)
         (prettify_operand src)
       |> indent_single
   | Move (dest, src) ->
       Printf.sprintf "%s <- %s" (prettify_operand (Symbol dest)) (prettify_operand src)
+      |> indent_single
+  | IntToFloat (dest, src) ->
+      Printf.sprintf "%s <- %s.f" (prettify_operand (Symbol dest)) (prettify_operand src)
+      |> indent_single
+  | FloatToInt (dest, src) ->
+      Printf.sprintf "%s <- %s.d" (prettify_operand (Symbol dest)) (prettify_operand src)
       |> indent_single
   | Label l -> Printf.sprintf ".L%d:" l
   | Jump l -> Printf.sprintf "jmp .L%d" l |> indent_single

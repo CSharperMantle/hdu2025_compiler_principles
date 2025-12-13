@@ -20,7 +20,7 @@ OUTPUT_SYS_ERROR='Fatal error: exception Sys_error'
 
 print_case_output () {
     echo "  --- Output ---"
-    echo "  $1"
+    echo "$1"
 }
 
 echo "Reading tests from $spec_file..."

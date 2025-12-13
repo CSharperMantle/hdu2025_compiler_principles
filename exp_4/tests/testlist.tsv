@@ -18,5 +18,6 @@ type	tests/test_type_bad_return_1.sy	failure	Error type semant_error	1
 type	tests/test_type_bad_return_2.sy	failure	Error type semant_error	1
 type	tests/test_type_bad_multi_error_1.sy	failure	Error type semant_error	4
 type	tests/test_type_bad_scopes_1.sy	failure	Error type semant_error	1
+type	tests/test_type_bad_scopes_2.sy	failure	Error type semant_error	1
 tac	tests/test_tac_scopes_1.sy	success		
 tac	tests/test_tac_scopes_2.sy	success		

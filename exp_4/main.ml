@@ -127,4 +127,7 @@ let main () : unit =
   else if cmd = "tac" then tac_file Sys.argv.(2)
   else usage ()
 
-let () : unit = if not !Sys.interactive then main ()
+let () : unit =
+  if not !Sys.interactive then (
+    Printexc.record_backtrace true;
+    main ())

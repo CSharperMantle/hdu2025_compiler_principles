@@ -1,14 +1,31 @@
+open Common
+
 type operand =
   | Symbol of int
   | Const of int
+  | ConstFloat of float
+
+type tac_elem_type =
+  | Int
+  | Float
+  | Void
+
+type tac_symbol_type = {
+  elem_ty : tac_elem_type;
+  is_array : bool;
+}
 
 type tac_instr =
-  | BinOp of int * Ast.bin_op * operand * operand (* %0 <- %1 %op %2 *)
-  | UnaryOp of int * Ast.unary_op * operand (* %0 <- %op %1 *)
+  | BinOp of int * Ast.bin_op * operand * operand (* %0 <- %1 %op.d %2 *)
+  | FBinOp of int * Ast.bin_op * operand * operand (* %0 <- %1 %op.f %2 *)
+  | UnaryOp of int * Ast.unary_op * operand (* %0 <- %op.d %1 *)
+  | FUnaryOp of int * Ast.unary_op * operand (* %0 <- %op.f %1 *)
   | Move of int * operand (* %0 <- %1 *)
-  | Label of int (* %L0: *)
-  | Jump of int (* goto %L0 *)
-  | CondJump of operand * int (* if %0 goto %L1 *)
+  | IntToFloat of int * operand (* %0 <- %1.f *)
+  | FloatToInt of int * operand (* %0 <- %1.d *)
+  | Label of int (* .L%0: *)
+  | Jump of int (* jmp .L%0 *)
+  | CondJump of operand * int (* jc %0, .L%1 *)
   | Call of int * int * operand list (* %0 <- call %1, ...%2 *)
   | Return of operand option (* ret %0 *)
   | MemRead of int * int * operand (* %0 <- %1[%2] *)
@@ -24,6 +41,7 @@ type tac_function = {
 type tac_program = {
   globals : int list;
   functions : tac_function list;
+  symbols : tac_symbol_type IntMap.t;
 }
 
 val prettify_tac_function : tac_function -> string
