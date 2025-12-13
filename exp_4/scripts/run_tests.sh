@@ -18,6 +18,11 @@ RESET_COLOR='\033[0m'
 
 OUTPUT_SYS_ERROR='Fatal error: exception Sys_error'
 
+print_case_output () {
+    echo "  --- Output ---"
+    echo "  $1"
+}
+
 echo "Reading tests from $spec_file..."
 while IFS="$(printf '\t')" read -r mode input_file expected_status expected_msg occurrence || [ -n "$mode" ]; do
     # Skip empty lines or comment
@@ -51,12 +56,12 @@ while IFS="$(printf '\t')" read -r mode input_file expected_status expected_msg 
                     if [ "$count" -eq "$occurrence" ]; then
                         passed=1
                     else
-                        reason="Expected error message '$expected_msg' to occur $occurrence times, found $count. got: $output"
+                        reason="Expected error message '$expected_msg' to occur $occurrence times, found $count"
                     fi
                 elif echo "$output" | grep -q "$expected_msg"; then
                     passed=1
                 else
-                    reason="Expected error message containing '$expected_msg', got: $output"
+                    reason="Expected error message containing '$expected_msg'"
                 fi
             else
                 passed=1
@@ -74,9 +79,7 @@ while IFS="$(printf '\t')" read -r mode input_file expected_status expected_msg 
     else
         printf "${RED}[FAIL]${RESET_COLOR} %s - %s\n" "$mode" "$input_file"
         echo "  Reason: $reason"
-        if [ "$expected_status" = "success" ]; then
-             echo "  Output: $output"
-        fi
+        print_case_output "$output"
     fi
 done < "$spec_file"
 
