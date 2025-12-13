@@ -33,6 +33,16 @@ type symbol_kind =
   | Named
   | Temp
 
+(*
+  The translation context.
+
+  Some quirks:
+    * Functions and objects are both "sym", so `next_name_id` track them all.
+    * `sym_kinds` contains functions, but `sym_tys` don't.
+    * `names` contains named variables and functions.
+  TODO:
+    * Separate functions from objects.
+*)
 type translation_context = {
   names : name_entry StringMap.t;
   sym_kinds : symbol_kind IntMap.t;
@@ -56,6 +66,7 @@ let exit_loop (ctx : translation_context) : translation_context =
 
 (*
   Helper function for merging a sub-block's translation context into its parent context.
+
   Preserved sub->parent:
     * sym_tys -- for keep uniquely-identified temporaries
     * next_name_id, next_label_id -- for allocation
@@ -78,6 +89,7 @@ let merge_sub_block_context (inner : translation_context) (outer : translation_c
 
 (*
   Helper function for merging a function body's translation context into its parent context.
+  
   Allocate a new name_entry in the outer context, then add the assembled IR (from the body context)
   to the outer functions.
 *)
