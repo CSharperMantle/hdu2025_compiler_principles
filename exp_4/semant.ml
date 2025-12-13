@@ -49,14 +49,51 @@ let enter_loop (range : int * int) (ctx : translation_context) : translation_con
 let exit_loop (ctx : translation_context) : translation_context =
   { ctx with loop_stack = List.tl ctx.loop_stack }
 
-let merge_sub_context (outer : translation_context) (inner : translation_context) :
+(*
+  Helper function for merging a sub-block's translation context into its parent context.
+  Preserved sub->parent:
+    * sym_tys -- for keep uniquely-identified temporaries
+    * next_name_id, next_label_id -- for allocation
+    * current_ir -- for code generation
+*)
+let merge_sub_block_context (inner : translation_context) (outer : translation_context) :
     translation_context =
+  if inner.current_ret_ty <> outer.current_ret_ty then
+    internal_error "Sub-blocks should never modify return type in context"
+  else if inner.functions <> outer.functions then
+    internal_error "Sub-blocks should never add new functions to context"
+  else
+    {
+      outer with
+      sym_tys = IntMap.union (fun _ v_outer _ -> Some v_outer) outer.sym_tys inner.sym_tys;
+      next_name_id = inner.next_name_id;
+      next_label_id = inner.next_label_id;
+      current_ir = inner.current_ir @ outer.current_ir;
+    }
+
+(*
+  Helper function for merging a function body's translation context into its parent context.
+  Allocate a new name_entry in the outer context, then add the assembled IR (from the body context) to the outer functions.
+*)
+let merge_fun_context (id : int) (ast_node : Ast.func_def) (t_params : t_func_param list)
+    (arg_tys : sem_type list) (ret_ty : b_type) (body : translation_context)
+    (outer : translation_context) : translation_context =
+  let tac_func =
+    {
+      Tac.func_id = id;
+      Tac.func_name = ast_node.Ast.func_name;
+      func_params = List.map (fun p -> p.t_param_id) t_params;
+      func_body = List.rev body.current_ir;
+    }
+  and names =
+    StringMap.add ast_node.Ast.func_name (FunEntry { id; args = arg_tys; ret = ret_ty }) outer.names
+  in
   {
     outer with
-    next_name_id = inner.next_name_id;
-    next_label_id = inner.next_label_id;
-    current_ir = inner.current_ir @ outer.current_ir;
-    functions = inner.functions @ outer.functions;
+    names;
+    next_name_id = body.next_name_id;
+    next_label_id = body.next_label_id;
+    functions = tac_func :: outer.functions;
   }
 
 let alloc_name_id (ctx : translation_context) : int * translation_context =
@@ -217,12 +254,15 @@ let rec gen_stmt (s : t_stmt) (ctx : translation_context) : translation_context 
       ctx
   | TExprStmt None -> ctx
   | TBlock items ->
-      List.fold_left
-        (fun ctx item ->
-          match item with
-          | TStmt s -> gen_stmt s ctx
-          | _ -> ctx)
-        ctx items
+      let ctx_body =
+        List.fold_left
+          (fun ctx item ->
+            match item with
+            | TStmt s -> gen_stmt s ctx
+            | _ -> ctx)
+          ctx items
+      in
+      merge_sub_block_context ctx_body ctx
   | TIf (cond, then_s, else_s_opt) ->
       let cond_opnd, _, ctx = gen_exp cond ctx in
       let l_then, ctx = alloc_label_id ctx in
@@ -515,7 +555,7 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
     | Ast.Block items ->
         let* t_items, sub_ctx = translate_block_items items ret_ty in_loop ctx in
         let res_stmt = TBlock t_items in
-        let ctx = merge_sub_context ctx sub_ctx in
+        let ctx = merge_sub_block_context sub_ctx ctx in
         agg_ok (res_stmt, ctx)
     | Ast.If (cond, then_s, else_s) ->
         let* cond_expr, cond_attr, ctx = translate_exp cond ctx in
@@ -606,7 +646,6 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
             let* rest_items, ctx = translate_comp_unit_item_list rest ctx in
             agg_ok (t_item :: rest_items, ctx)
         | Ast.FuncDefItem f ->
-            let ret_ty = b_type_from_ast_func f.Ast.func_ret_type in
             let rec process_params params acc_arg_tys acc_t_params ctx =
               match params with
               | [] -> agg_ok (List.rev acc_arg_tys, List.rev acc_t_params, ctx)
@@ -631,30 +670,13 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
                   in
                   process_params p_rest (arg_ty :: acc_arg_tys) (t_param :: acc_t_params) ctx
             in
+            let ret_ty = b_type_from_ast_func f.Ast.func_ret_type in
             let* arg_tys, t_params, ctx_params = process_params f.Ast.func_params [] [] ctx in
             let func_id, ctx_body = alloc_func f.Ast.func_name arg_tys ret_ty ctx_params in
             let* t_body, ctx_body = translate_block_items f.Ast.func_body ret_ty false ctx_body in
             let ctx_body = gen_stmt (TBlock t_body) ctx_body in
-            let tac_func =
-              {
-                Tac.func_id;
-                Tac.func_name = f.Ast.func_name;
-                func_params = List.map (fun p -> p.t_param_id) t_params;
-                func_body = List.rev ctx_body.current_ir;
-              }
-            in
-            let ctx =
-              {
-                ctx with
-                names =
-                  StringMap.add f.Ast.func_name
-                    (FunEntry { id = func_id; args = arg_tys; ret = ret_ty })
-                    ctx.names;
-                next_name_id = ctx_body.next_name_id;
-                next_label_id = ctx_body.next_label_id;
-                functions = tac_func :: ctx.functions;
-              }
-            in
+            let ctx = merge_fun_context func_id f t_params arg_tys ret_ty ctx_body ctx in
+            let* rest_items, ctx = translate_comp_unit_item_list rest ctx in
             let t_func =
               {
                 t_func_id = func_id;
@@ -664,7 +686,6 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
                 t_func_body = t_body;
               }
             in
-            let* rest_items, ctx = translate_comp_unit_item_list rest ctx in
             agg_ok (TFuncDefItem t_func :: rest_items, ctx))
   in
   let result =
