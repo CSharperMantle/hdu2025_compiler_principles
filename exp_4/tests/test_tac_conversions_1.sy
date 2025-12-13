@@ -1,0 +1,13 @@
+int foo(float a) {
+    return a;
+}
+
+float bar(int b) {
+    return b;
+}
+
+int baz(int c) {
+    float x1 = bar(c);
+    float x2 = x1 * 2;
+    return foo(x2);
+}

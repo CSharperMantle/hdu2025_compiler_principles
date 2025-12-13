@@ -157,17 +157,24 @@ let empty_translation_context =
     current_ret_ty = VoidType;
   }
 
-let coerce_type (opnd : Tac.operand) (src_sem_ty : sem_type) (dst_ty : b_type)
-    (ctx : translation_context) : Tac.operand * translation_context =
-  match (src_sem_ty.elem_ty, dst_ty) with
+let can_coerce_type (dst_ty : b_type) (src_ty : b_type) : bool =
+  match (dst_ty, src_ty) with
+  | t1, t2 when t1 = t2 -> true
+  | IntType, FloatType -> true
+  | FloatType, IntType -> true
+  | _ -> false
+
+let coerce_type (opnd : Tac.operand) (dst_ty : b_type) (src_ty : b_type) (ctx : translation_context)
+    : Tac.operand * translation_context =
+  match (dst_ty, src_ty) with
   | t1, t2 when t1 = t2 -> (opnd, ctx)
   | IntType, FloatType ->
-      let temp, ctx = alloc_temp float_type ctx in
-      let instr = Tac.IntToFloat (temp, opnd) in
-      (Tac.Symbol temp, emit instr ctx)
-  | FloatType, IntType ->
       let temp, ctx = alloc_temp int_type ctx in
       let instr = Tac.FloatToInt (temp, opnd) in
+      (Tac.Symbol temp, emit instr ctx)
+  | FloatType, IntType ->
+      let temp, ctx = alloc_temp float_type ctx in
+      let instr = Tac.IntToFloat (temp, opnd) in
       (Tac.Symbol temp, emit instr ctx)
   | _ -> internal_error "Cannot coerce between these types"
 
@@ -182,7 +189,7 @@ let rec gen_opnd_index (indices : t_exp list) (dims : int list) (ctx : translati
   |> Seq.fold_left
        (fun (acc, ctx) (i, n) ->
          let opnd, opnd_ty, ctx = gen_exp i ctx in
-         let opnd, ctx = coerce_type opnd opnd_ty IntType ctx in
+         let opnd, ctx = coerce_type opnd IntType opnd_ty.elem_ty ctx in
          let temp_mul, ctx = alloc_temp int_type ctx in
          let mul = Tac.BinOp (temp_mul, Ast.Mul, acc, Tac.Const n) in
          let temp_add, ctx = alloc_temp int_type ctx in
@@ -220,8 +227,8 @@ and gen_exp (exp : t_exp) (ctx : translation_context) : Tac.operand * sem_type *
       let target_ty =
         if ty1.elem_ty = FloatType || ty2.elem_ty = FloatType then FloatType else IntType
       in
-      let opnd1, ctx = coerce_type opnd1 ty1 target_ty ctx in
-      let opnd2, ctx = coerce_type opnd2 ty2 target_ty ctx in
+      let opnd1, ctx = coerce_type opnd1 target_ty ty1.elem_ty ctx in
+      let opnd2, ctx = coerce_type opnd2 target_ty ty2.elem_ty ctx in
       let temp, ctx = alloc_temp res_ty ctx in
       let instr =
         if target_ty = FloatType then Tac.FBinOp (temp, op, opnd1, opnd2)
@@ -238,7 +245,7 @@ and gen_exp (exp : t_exp) (ctx : translation_context) : Tac.operand * sem_type *
         List.fold_left2
           (fun (opnds, ctx) p arg_ty ->
             let opnd, p_ty, ctx = gen_exp p ctx in
-            let opnd, ctx = coerce_type opnd p_ty arg_ty.elem_ty ctx in
+            let opnd, ctx = coerce_type opnd arg_ty.elem_ty p_ty.elem_ty ctx in
             (opnd :: opnds, ctx))
           ([], ctx) params args
       in
@@ -251,13 +258,13 @@ let rec gen_stmt (s : t_stmt) (ctx : translation_context) : translation_context 
   | TAssign (id, _, [], rhs) ->
       let rhs_opnd, rhs_ty, ctx = gen_exp rhs ctx in
       let lhs_ty = find_sym_type id ctx in
-      let rhs_opnd, ctx = coerce_type rhs_opnd rhs_ty lhs_ty.elem_ty ctx in
+      let rhs_opnd, ctx = coerce_type rhs_opnd lhs_ty.elem_ty rhs_ty.elem_ty ctx in
       let instr = Tac.Move (id, rhs_opnd) in
       { ctx with current_ir = instr :: ctx.current_ir }
   | TAssign (id, _, indices, rhs) ->
       let lhs_ty = find_sym_type id ctx in
       let rhs_opnd, rhs_ty, ctx = gen_exp rhs ctx in
-      let rhs_opnd, ctx = coerce_type rhs_opnd rhs_ty lhs_ty.elem_ty ctx in
+      let rhs_opnd, ctx = coerce_type rhs_opnd lhs_ty.elem_ty rhs_ty.elem_ty ctx in
       let opnd_index, ctx = gen_opnd_index indices lhs_ty.dims ctx in
       let wr = Tac.MemWrite (id, opnd_index, rhs_opnd) in
       ctx |> emit wr
@@ -303,7 +310,7 @@ let rec gen_stmt (s : t_stmt) (ctx : translation_context) : translation_context 
       | [] -> internal_error "Continue outside of loop")
   | TReturn (Some e) ->
       let opnd, ty, ctx = gen_exp e ctx in
-      let opnd, ctx = coerce_type opnd ty ctx.current_ret_ty ctx in
+      let opnd, ctx = coerce_type opnd ctx.current_ret_ty ty.elem_ty ctx in
       ctx |> emit (Tac.Return (Some opnd))
   | TReturn None -> ctx |> emit (Tac.Return None)
 
@@ -618,8 +625,7 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
             let res_stmt = TReturn (Some t_e) in
 
             if attr.ty.dims <> [] then agg_error "Cannot return an array" (res_stmt, ctx)
-            else if attr.ty.elem_ty = t then agg_ok (res_stmt, ctx)
-            else if t = FloatType && attr.ty.elem_ty = IntType then agg_ok (res_stmt, ctx)
+            else if can_coerce_type t attr.ty.elem_ty then agg_ok (res_stmt, ctx)
             else agg_error "Return type mismatch" (res_stmt, ctx))
   and translate_block_items items ret_ty in_loop ctx =
     match items with
