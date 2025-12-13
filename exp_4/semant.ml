@@ -190,6 +190,13 @@ let coerce_type (opnd : Tac.operand) (dst_ty : b_type) (src_ty : b_type) (ctx : 
       (Tac.Object temp, emit instr ctx)
   | _ -> internal_error "Cannot coerce between these types"
 
+let common_type_of (ty1 : b_type) (ty2 : b_type) : b_type =
+  match (ty1, ty2) with
+  | ty1, ty2 when ty1 = ty2 -> ty1
+  | _, VoidType | VoidType, _ -> VoidType
+  | FloatType, IntType | IntType, FloatType -> FloatType
+  | _ -> internal_error "Common type is not defined for these types"
+
 let find_obj_type (id : int) (ctx : translation_context) : sem_type =
   match IntMap.find_opt id ctx.obj_tys with
   | Some ty -> ty
@@ -236,9 +243,7 @@ and gen_exp (exp : t_exp) (ctx : translation_context) : Tac.operand * sem_type *
   | TBinary (op, e1, e2, res_ty) ->
       let opnd1, ty1, ctx = gen_exp e1 ctx in
       let opnd2, ty2, ctx = gen_exp e2 ctx in
-      let target_ty =
-        if ty1.elem_ty = FloatType || ty2.elem_ty = FloatType then FloatType else IntType
-      in
+      let target_ty = common_type_of ty1.elem_ty ty2.elem_ty in
       let opnd1, ctx = coerce_type opnd1 target_ty ty1.elem_ty ctx in
       let opnd2, ctx = coerce_type opnd2 target_ty ty2.elem_ty ctx in
       let temp, ctx = alloc_temp_obj res_ty ctx in
