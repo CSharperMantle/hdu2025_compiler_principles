@@ -4,7 +4,7 @@ open Util
 
 type parsing_error = source_location * string
 
-let with_lexbuf filename f =
+let with_lexed (filename : string) (f : Lexing.lexbuf -> 'a) : 'a =
   let ic = open_in filename in
   let lexbuf = Lexing.from_channel ic in
   lexbuf.lex_curr_p <- { lexbuf.lex_curr_p with pos_fname = filename };
@@ -17,16 +17,6 @@ let with_lexbuf filename f =
     Printf.eprintf "Error type Lexer.Lexing_error at %s:%d:%d: %s\n" filename loc.lineno loc.colno
       msg;
     exit 1
-
-let lex_file filename =
-  with_lexbuf filename (fun lexbuf ->
-      let tokens = Lexer.get_all_tokens lexbuf in
-      List.iter
-        (fun tok ->
-          match tok with
-          | Parser.EOF -> ()
-          | _ -> Tokens.token_to_string tok |> print_endline)
-        tokens)
 
 let parse (lexbuf : Lexing.lexbuf) : (Ast.comp_unit, parsing_error list) result =
   let recover env =
@@ -74,48 +64,61 @@ let parse (lexbuf : Lexing.lexbuf) : (Ast.comp_unit, parsing_error list) result 
   let errors = List.rev errors in
   if errors <> [] then Error errors else Option.to_result ~none:errors comp_unit
 
-let parse_and_process filename f =
-  with_lexbuf filename (fun lexbuf ->
-      match parse lexbuf with
-      | Error errors ->
-          List.iter
-            (fun (loc, msg) ->
-              Printf.eprintf "Error type parsing_error at %s:%d:%d: %s\n" filename loc.lineno
-                loc.colno msg)
-            errors;
-          exit 1
-      | Ok comp_unit -> f comp_unit)
+let with_parsed (filename : string) (lexbuf : Lexing.lexbuf) (f : Ast.comp_unit -> 'a) : 'a =
+  match parse lexbuf with
+  | Error errors ->
+      List.iter
+        (fun (loc, msg) ->
+          Printf.eprintf "Error type parsing_error at %s:%d:%d: %s\n" filename loc.lineno loc.colno
+            msg)
+        errors;
+      exit 1
+  | Ok comp_unit -> f comp_unit
 
-let parse_file filename =
-  parse_and_process filename (fun comp_unit ->
-      Ast.prettify_comp_unit comp_unit
-      |> List.fold_left (fun acc l -> acc ^ l ^ "\n") ""
-      |> print_endline)
-
-let translate_and_process comp_unit f =
+let with_translated (filename : string) (comp_unit : Ast.comp_unit)
+    (f : Sem_ast.t_comp_unit * Tac.tac_program -> 'a) =
   match Semant.translate comp_unit Semant.empty_translation_context with
   | Ok res -> f res
   | Error errs ->
-      List.iter (fun msg -> Printf.eprintf "Error type semant_error: %s\n" msg) errs;
+      List.iter (fun msg -> Printf.eprintf "Error type semant_error at %s: %s\n" filename msg) errs;
       exit 1
 
-let type_file filename =
-  parse_and_process filename (fun comp_unit ->
-      translate_and_process comp_unit (fun (tree, _, _) ->
-          Sem_ast.prettify_t_comp_unit tree
+let lex_file (filename : string) : unit =
+  with_lexed filename (fun lexbuf ->
+      let tokens = Lexer.get_all_tokens lexbuf in
+      List.iter
+        (fun tok ->
+          match tok with
+          | Parser.EOF -> ()
+          | _ -> Tokens.token_to_string tok |> print_endline)
+        tokens)
+
+let parse_file (filename : string) : unit =
+  with_lexed filename (fun lexbuf ->
+      with_parsed filename lexbuf (fun comp_unit ->
+          Ast.prettify_comp_unit comp_unit
           |> List.fold_left (fun acc l -> acc ^ l ^ "\n") ""
           |> print_endline))
 
-let tac_file filename =
-  parse_and_process filename (fun comp_unit ->
-      translate_and_process comp_unit (fun (_, _, program) ->
-          Tac.prettify_tac_program program |> print_endline))
+let type_file (filename : string) : unit =
+  with_lexed filename (fun lexbuf ->
+      with_parsed filename lexbuf (fun comp_unit ->
+          with_translated filename comp_unit (fun (tree, _) ->
+              Sem_ast.prettify_t_comp_unit tree
+              |> List.fold_left (fun acc l -> acc ^ l ^ "\n") ""
+              |> print_endline)))
 
-let usage () =
+let tac_file (filename : string) : unit =
+  with_lexed filename (fun lexbuf ->
+      with_parsed filename lexbuf (fun comp_unit ->
+          with_translated filename comp_unit (fun (_, program) ->
+              Tac.prettify_tac_program program |> print_endline)))
+
+let usage () : 'a =
   Printf.eprintf "usage: %s <lex|parse|type|tac> <source-file>\n" Sys.argv.(0);
   exit 1
 
-let main () =
+let main () : unit =
   if Array.length Sys.argv < 3 then usage ();
   let cmd = String.trim Sys.argv.(1) in
   if cmd = "lex" then lex_file Sys.argv.(2)
@@ -124,4 +127,4 @@ let main () =
   else if cmd = "tac" then tac_file Sys.argv.(2)
   else usage ()
 
-let () = if not !Sys.interactive then main ()
+let () : unit = if not !Sys.interactive then main ()

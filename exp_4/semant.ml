@@ -325,7 +325,7 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
   | Ast.Call (name, params) -> translate_call name params ctx
 
 let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
-    (t_comp_unit * translation_context * Tac.tac_program, string list) result =
+    (t_comp_unit * Tac.tac_program, string list) result =
   let eval_const_dim e ctx =
     let* t_e, attr, ctx = translate_exp e ctx in
 
@@ -609,12 +609,12 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
             agg_ok (TFuncDefItem t_func :: rest_items, ctx))
   in
   let result =
-    let* comp_unit, final_ctx = translate_comp_unit_item_list comp_unit ctx in
+    let* comp_unit, ctx = translate_comp_unit_item_list comp_unit ctx in
     let globals =
-      IntMap.bindings final_ctx.var_kinds
+      IntMap.bindings ctx.var_kinds
       |> List.filter_map (fun (id, kind) -> if kind = Named then Some id else None)
     in
-    let program = { Tac.globals; functions = List.rev final_ctx.functions } in
-    agg_ok (comp_unit, final_ctx, program)
+    let program = { Tac.globals; functions = List.rev ctx.functions } in
+    agg_ok (comp_unit, program)
   in
   agg_to_result result
