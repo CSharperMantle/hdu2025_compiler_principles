@@ -202,6 +202,26 @@ let find_obj_type (id : int) (ctx : translation_context) : sem_type =
   | Some ty -> ty
   | None -> internal_error (Printf.sprintf "Object %d not found in type table" id)
 
+let eval_unary_op (v : int) = function
+  | Ast.Pos -> v
+  | Ast.Neg -> -v
+  | Ast.Not -> Bool.to_int (v = 0)
+
+let eval_binary_op (lv : int) (rv : int) = function
+  | Ast.Add -> lv + rv
+  | Ast.Sub -> lv - rv
+  | Ast.Mul -> lv * rv
+  | Ast.Div -> lv / rv
+  | Ast.Mod -> lv mod rv
+  | Ast.Lt -> Bool.to_int (lv < rv)
+  | Ast.Gt -> Bool.to_int (lv > rv)
+  | Ast.Leq -> Bool.to_int (lv <= rv)
+  | Ast.Geq -> Bool.to_int (lv >= rv)
+  | Ast.Eq -> Bool.to_int (lv = rv)
+  | Ast.Neq -> Bool.to_int (lv <> rv)
+  | Ast.And -> Bool.to_int (lv <> 0 && rv <> 0)
+  | Ast.Or -> Bool.to_int (lv <> 0 || rv <> 0)
+
 let rec gen_opnd_index (indices : t_exp list) (dims : int list) (ctx : translation_context) :
     Tac.operand * translation_context =
   Seq.zip (List.to_seq indices) (List.to_seq dims)
@@ -392,8 +412,7 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
     | Ast.Pos | Ast.Neg ->
         let exp_val =
           match (op, sub_attr.const_val) with
-          | Ast.Neg, Some v -> Some (-v)
-          | Ast.Pos, Some v -> Some v
+          | op, Some v -> Some (eval_unary_op v op)
           | _ -> None
         in
         let result_attr = { ty = sub_attr.ty; const_val = exp_val } in
@@ -420,13 +439,16 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
     let res_elem_ty =
       match op with
       | Ast.Add | Ast.Sub | Ast.Mul | Ast.Div | Ast.Mod ->
-          if l_attr.ty.elem_ty = FloatType || r_attr.ty.elem_ty = FloatType then FloatType
-          else IntType
+          common_type_of l_attr.ty.elem_ty r_attr.ty.elem_ty
       | _ -> IntType
+    and exp_val =
+      match (op, l_attr.const_val, r_attr.const_val) with
+      | op, Some lv, Some rv -> Some (eval_binary_op lv rv op)
+      | _ -> None
     in
     let res_ty = scalar_type_of res_elem_ty in
     let result_expr = TBinary (op, l_expr, r_expr, res_ty)
-    and result_attr = { ty = res_ty; const_val = None } in
+    and result_attr = { ty = res_ty; const_val = exp_val } in
 
     if l_attr.ty.dims <> [] || r_attr.ty.dims <> [] then
       agg_error "Binary operator applied to array" (result_expr, result_attr, ctx)
