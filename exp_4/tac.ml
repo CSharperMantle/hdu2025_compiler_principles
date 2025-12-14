@@ -23,6 +23,16 @@ type tac_obj_type = {
 let prettify_tac_obj_type (ty : tac_obj_type) : string =
   Printf.sprintf "%s%s" (string_of_tac_elem_type ty.elem_ty) (if ty.is_array then "[]" else "")
 
+type tac_init =
+  | InitInt of int
+  | InitList of tac_init list
+
+let rec prettify_tac_init = function
+  | InitInt v -> string_of_int v
+  | InitList vs ->
+      let content = List.map prettify_tac_init vs |> String.concat ", " in
+      Printf.sprintf "{%s}" content
+
 type tac_instr =
   | BinOp of int * Ast.bin_op * operand * operand
   | FBinOp of int * Ast.bin_op * operand * operand
@@ -50,6 +60,7 @@ type tac_function = {
 
 type tac_program = {
   globals : int list;
+  global_init : tac_init IntMap.t;
   functions : tac_function list;
   objects : tac_obj_type IntMap.t;
 }
@@ -140,7 +151,13 @@ let prettify_tac_function (f : tac_function) : string =
 
 let prettify_tac_program (p : tac_program) : string =
   let globals_str =
-    List.map (fun id -> Printf.sprintf ".global %s" (prettify_operand (Object id))) p.globals
+    List.map
+      (fun id ->
+        let decl = Printf.sprintf ".global\t%s" (prettify_operand (Object id)) in
+        match IntMap.find_opt id p.global_init with
+        | Some init -> Printf.sprintf "%s, %s" decl (prettify_tac_init init)
+        | None -> decl)
+      p.globals
     |> String.concat "\n"
   in
   let funcs_str = List.map prettify_tac_function p.functions |> String.concat "\n\n" in

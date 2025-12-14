@@ -15,6 +15,10 @@ type tac_obj_type = {
   is_array : bool;
 }
 
+type tac_init =
+  | InitInt of int
+  | InitList of tac_init list
+
 type tac_instr =
   | BinOp of int * Ast.bin_op * operand * operand (* %0 <- %1 %op.d %2 *)
   | FBinOp of int * Ast.bin_op * operand * operand (* %0 <- %1 %op.f %2 *)
@@ -42,6 +46,7 @@ type tac_function = {
 
 type tac_program = {
   globals : int list;
+  global_init : tac_init IntMap.t;
   functions : tac_function list;
   objects : tac_obj_type IntMap.t;
 }

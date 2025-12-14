@@ -41,6 +41,7 @@ type translation_context = {
   names : name_entry StringMap.t;
   obj_kinds : obj_kind IntMap.t;
   obj_tys : sem_type IntMap.t;
+  global_inits : Tac.tac_init IntMap.t;
   next_obj_id : int;
   next_func_id : int;
   next_label_id : int;
@@ -180,11 +181,24 @@ let alloc_temp_obj (ty : sem_type) (ctx : translation_context) : int * translati
       obj_tys = IntMap.add id ty ctx.obj_tys;
     } )
 
+let insert_global_init (id : int) (init_val : Tac.tac_init) (ctx : translation_context) :
+    translation_context =
+  let _ =
+    if not ctx.is_global_scope then internal_error "Cannot assign global init in non-global context"
+    else
+      match IntMap.find_opt id ctx.obj_kinds with
+      | Some Global -> ()
+      | Some _ -> internal_error "Cannot assign global init to non-global object"
+      | None -> internal_error "Object id not found for global init assignment"
+  in
+  { ctx with global_inits = IntMap.add id init_val ctx.global_inits }
+
 let empty_translation_context =
   {
     names = StringMap.empty;
     obj_kinds = IntMap.empty;
     obj_tys = IntMap.empty;
+    global_inits = IntMap.empty;
     next_obj_id = 0;
     next_func_id = 0;
     next_label_id = 0;
@@ -530,47 +544,55 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
         let* t_e, attr, ctx = translate_exp e ctx in
 
         if attr.const_val = None then
-          agg_error "Constant initializer must be constant" (TConstExp t_e, ctx)
-        else agg_ok (TConstExp t_e, ctx)
+          agg_error "Constant initializer must be constant" (TConstExp t_e, Tac.InitInt 0, ctx)
+        else agg_ok (TConstExp t_e, Tac.InitInt (Option.get attr.const_val), ctx)
     | Ast.ConstArray vals ->
         let rec visit_vals vs ctx =
           match vs with
-          | [] -> agg_ok ([], ctx)
+          | [] -> agg_ok ([], [], ctx)
           | v :: rest ->
-              let* t_v, ctx = translate_const_init v ctx in
-              let* t_rest, ctx = visit_vals rest ctx in
-              agg_ok (t_v :: t_rest, ctx)
+              let* t_v, init_v, ctx = translate_const_init v ctx in
+              let* t_rest, init_rest, ctx = visit_vals rest ctx in
+              agg_ok (t_v :: t_rest, init_v :: init_rest, ctx)
         in
-        let* t_vals, ctx = visit_vals vals ctx in
-        agg_ok (TConstArray t_vals, ctx)
+        let* t_vals, init_vals, ctx = visit_vals vals ctx in
+        agg_ok (TConstArray t_vals, Tac.InitList init_vals, ctx)
   in
   let rec translate_init init ctx =
     match init with
     | Ast.InitExp e ->
-        let* t_e, _, ctx = translate_exp e ctx in
-        agg_ok (TInitExp t_e, ctx)
+        let* t_e, attr, ctx = translate_exp e ctx in
+        let init_val = Option.map (fun v -> Tac.InitInt v) attr.const_val in
+        agg_ok (TInitExp t_e, init_val, ctx)
     | Ast.InitArray vals ->
         let rec visit_vals vs ctx =
           match vs with
-          | [] -> agg_ok ([], ctx)
+          | [] -> agg_ok ([], Some [], ctx)
           | v :: rest ->
-              let* t_v, ctx = translate_init v ctx in
-              let* t_rest, ctx = visit_vals rest ctx in
-              agg_ok (t_v :: t_rest, ctx)
+              let* t_v, init_v, ctx = translate_init v ctx in
+              let* t_rest, init_rest, ctx = visit_vals rest ctx in
+              let combined_init =
+                match (init_v, init_rest) with
+                | Some v, Some rest -> Some (v :: rest)
+                | _ -> None
+              in
+              agg_ok (t_v :: t_rest, combined_init, ctx)
         in
-        let* t_vals, ctx = visit_vals vals ctx in
-        agg_ok (TInitArray t_vals, ctx)
+        let* t_vals, init_vals, ctx = visit_vals vals ctx in
+        let init_val = Option.map (fun v -> Tac.InitList v) init_vals in
+        agg_ok (TInitArray t_vals, init_val, ctx)
   in
   let rec add_const_defs defs ty acc_defs ctx =
     match defs with
     | [] -> agg_ok (List.rev acc_defs, ctx)
     | d :: ds ->
         let* dims_vals, dims_exprs, ctx = eval_dims d.Ast.const_dims [] [] ctx in
-        let* t_init, ctx = translate_const_init d.Ast.const_init ctx in
+        let* t_init, init_val, ctx = translate_const_init d.Ast.const_init ctx in
         let kind = if ctx.is_global_scope then Global else Local in
         let id, ctx =
           alloc_named_obj d.Ast.const_name { elem_ty = ty; dims = dims_vals } kind ctx
         in
+        let ctx = if kind = Global then insert_global_init id init_val ctx else ctx in
         let t_def =
           {
             t_const_id = id;
@@ -585,15 +607,25 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
     | [] -> agg_ok (List.rev acc_defs, List.rev acc_stmts, ctx)
     | d :: ds ->
         let* dims_vals, dims_exprs, ctx = eval_dims d.Ast.var_dims [] [] ctx in
-        let* t_init, ctx =
+        let* t_init, init_val, ctx =
           match d.Ast.var_init with
           | Some init ->
-              let* t_i, ctx = translate_init init ctx in
-              agg_ok (Some t_i, ctx)
-          | None -> agg_ok (None, ctx)
+              let* t_i, init_v, ctx = translate_init init ctx in
+              agg_ok (Some t_i, init_v, ctx)
+          | None -> agg_ok (None, None, ctx)
         in
         let kind = if ctx.is_global_scope then Global else Local in
         let id, ctx = alloc_named_obj d.Ast.var_name { elem_ty = ty; dims = dims_vals } kind ctx in
+        let* _ =
+          if kind = Global && d.Ast.var_init <> None && init_val = None then
+            agg_error "Global initializer must be constant" ()
+          else agg_ok ()
+        in
+        let ctx =
+          match (kind, init_val) with
+          | Global, Some v -> { ctx with global_inits = IntMap.add id v ctx.global_inits }
+          | _ -> ctx
+        in
         let init_stmt =
           match (kind, t_init) with
           | Global, _ -> None
@@ -792,7 +824,9 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
           (id, { Tac.elem_ty; is_array = ty.dims <> [] }))
       |> List.to_seq |> IntMap.of_seq
     in
-    let program = { Tac.globals; functions = List.rev ctx.functions; objects } in
+    let program =
+      { Tac.globals; global_init = ctx.global_inits; functions = List.rev ctx.functions; objects }
+    in
     agg_ok (comp_unit, program)
   in
   agg_to_result result
