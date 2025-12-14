@@ -208,19 +208,20 @@ let eval_unary_op (v : int) = function
   | Ast.Not -> Bool.to_int (v = 0)
 
 let eval_binary_op (lv : int) (rv : int) = function
-  | Ast.Add -> lv + rv
-  | Ast.Sub -> lv - rv
-  | Ast.Mul -> lv * rv
-  | Ast.Div -> lv / rv
-  | Ast.Mod -> lv mod rv
-  | Ast.Lt -> Bool.to_int (lv < rv)
-  | Ast.Gt -> Bool.to_int (lv > rv)
-  | Ast.Leq -> Bool.to_int (lv <= rv)
-  | Ast.Geq -> Bool.to_int (lv >= rv)
-  | Ast.Eq -> Bool.to_int (lv = rv)
-  | Ast.Neq -> Bool.to_int (lv <> rv)
-  | Ast.And -> Bool.to_int (lv <> 0 && rv <> 0)
-  | Ast.Or -> Bool.to_int (lv <> 0 || rv <> 0)
+  | Ast.Add -> Some (lv + rv)
+  | Ast.Sub -> Some (lv - rv)
+  | Ast.Mul -> Some (lv * rv)
+  | Ast.Div when rv <> 0 -> Some (lv / rv)
+  | Ast.Mod when rv <> 0 -> Some (lv mod rv)
+  | Ast.Lt -> Some (Bool.to_int (lv < rv))
+  | Ast.Gt -> Some (Bool.to_int (lv > rv))
+  | Ast.Leq -> Some (Bool.to_int (lv <= rv))
+  | Ast.Geq -> Some (Bool.to_int (lv >= rv))
+  | Ast.Eq -> Some (Bool.to_int (lv = rv))
+  | Ast.Neq -> Some (Bool.to_int (lv <> rv))
+  | Ast.And -> Some (Bool.to_int (lv <> 0 && rv <> 0))
+  | Ast.Or -> Some (Bool.to_int (lv <> 0 || rv <> 0))
+  | _ -> None
 
 let rec gen_opnd_index (indices : t_exp list) (dims : int list) (ctx : translation_context) :
     Tac.operand * translation_context =
@@ -443,7 +444,7 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
       | _ -> IntType
     and exp_val =
       match (op, l_attr.const_val, r_attr.const_val) with
-      | op, Some lv, Some rv -> Some (eval_binary_op lv rv op)
+      | op, Some lv, Some rv -> eval_binary_op lv rv op
       | _ -> None
     in
     let res_ty = scalar_type_of res_elem_ty in
