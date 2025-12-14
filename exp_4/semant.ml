@@ -182,11 +182,11 @@ let coerce_type (opnd : Tac.operand) (dst_ty : b_type) (src_ty : b_type) (ctx : 
   | t1, t2 when t1 = t2 -> (opnd, ctx)
   | IntType, FloatType ->
       let temp, ctx = alloc_temp_obj int_type ctx in
-      let instr = Tac.FloatToInt (temp, opnd) in
+      let instr = Tac.Ftd (temp, opnd) in
       (Tac.Object temp, emit instr ctx)
   | FloatType, IntType ->
       let temp, ctx = alloc_temp_obj float_type ctx in
-      let instr = Tac.IntToFloat (temp, opnd) in
+      let instr = Tac.Dtf (temp, opnd) in
       (Tac.Object temp, emit instr ctx)
   | _ -> internal_error "Cannot coerce between these types"
 
@@ -227,7 +227,7 @@ and gen_exp (exp : t_exp) (ctx : translation_context) : Tac.operand * sem_type *
       let dims = (find_obj_type id ctx).dims in
       let opnd_index, ctx = gen_opnd_index indices dims ctx in
       let temp, ctx = alloc_temp_obj ty ctx in
-      let rd = Tac.MemRead (temp, id, opnd_index) in
+      let rd = Tac.Rd (temp, id, opnd_index) in
       (Tac.Object temp, ty, ctx |> emit rd)
   | TUnary (op, e, res_ty) ->
       let opnd, sub_ty, ctx = gen_exp e ctx in
@@ -276,14 +276,14 @@ let rec gen_stmt (s : t_stmt) (ctx : translation_context) : translation_context 
       let rhs_opnd, rhs_ty, ctx = gen_exp rhs ctx in
       let lhs_ty = find_obj_type id ctx in
       let rhs_opnd, ctx = coerce_type rhs_opnd lhs_ty.elem_ty rhs_ty.elem_ty ctx in
-      let instr = Tac.Move (id, rhs_opnd) in
+      let instr = Tac.Mv (id, rhs_opnd) in
       { ctx with current_ir = instr :: ctx.current_ir }
   | TAssign (id, _, indices, rhs) ->
       let lhs_ty = find_obj_type id ctx in
       let rhs_opnd, rhs_ty, ctx = gen_exp rhs ctx in
       let rhs_opnd, ctx = coerce_type rhs_opnd lhs_ty.elem_ty rhs_ty.elem_ty ctx in
       let opnd_index, ctx = gen_opnd_index indices lhs_ty.dims ctx in
-      let wr = Tac.MemWrite (id, opnd_index, rhs_opnd) in
+      let wr = Tac.Wr (id, opnd_index, rhs_opnd) in
       ctx |> emit wr
   | TExprStmt (Some e) ->
       let _, _, ctx = gen_exp e ctx in
@@ -303,7 +303,7 @@ let rec gen_stmt (s : t_stmt) (ctx : translation_context) : translation_context 
       let cond_opnd, _, ctx = gen_exp cond ctx in
       let l_then, ctx = alloc_label_id ctx in
       let l_end, ctx = alloc_label_id ctx in
-      let ctx = ctx |> emit (Tac.CondJump (cond_opnd, l_then)) in
+      let ctx = ctx |> emit (Tac.Jc (cond_opnd, l_then)) in
       map_or (fun else_s -> gen_stmt else_s ctx) ctx else_s_opt
       |> emit (Tac.Jump l_end) |> emit (Tac.Label l_then) |> gen_stmt then_s
       |> emit (Tac.Label l_end)
@@ -314,7 +314,7 @@ let rec gen_stmt (s : t_stmt) (ctx : translation_context) : translation_context 
       let ctx = ctx |> emit (Tac.Label l_start) |> enter_loop (l_start, l_end) in
       let cond_opnd, _, ctx = gen_exp cond ctx in
       ctx
-      |> emit (Tac.CondJump (cond_opnd, l_body))
+      |> emit (Tac.Jc (cond_opnd, l_body))
       |> emit (Tac.Jump l_end) |> emit (Tac.Label l_body) |> gen_stmt body
       |> emit (Tac.Jump l_start) |> emit (Tac.Label l_end) |> exit_loop
   | TBreak -> (

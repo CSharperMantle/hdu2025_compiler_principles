@@ -22,9 +22,9 @@ module AggResult = struct
   end
 end
 
-let indent_single (line : string) : string = "  " ^ line
-let indent (lines : string list) : string list = List.map (fun l -> "  " ^ l) lines
-let indent_seq (lines : string Seq.t) : string Seq.t = Seq.map (fun l -> "  " ^ l) lines
+let indent_single (line : string) : string = "\t" ^ line
+let indent (lines : string list) : string list = List.map (fun l -> "\t" ^ l) lines
+let indent_seq (lines : string Seq.t) : string Seq.t = Seq.map (fun l -> "\t" ^ l) lines
 let internal_error (msg : string) : 'a = failwith (Printf.sprintf "Internal error: %s" msg)
 
 let map_or (f : 'a -> 'b) (default : 'b) (opt : 'a option) : 'b =
