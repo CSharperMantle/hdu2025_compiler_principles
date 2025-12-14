@@ -79,7 +79,7 @@ let merge_sub_block_context (inner : translation_context) (outer : translation_c
       next_obj_id = inner.next_obj_id;
       next_func_id = inner.next_func_id;
       next_label_id = inner.next_label_id;
-      current_ir = inner.current_ir @ outer.current_ir;
+      current_ir = inner.current_ir;
     }
 
 (*
