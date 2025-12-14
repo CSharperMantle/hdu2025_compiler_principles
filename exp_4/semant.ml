@@ -30,7 +30,8 @@ let fallback_texp = TIntLit 0
 
 type obj_kind =
   | Param
-  | Named
+  | Local
+  | Global
   | Temp
 
 (*
@@ -47,7 +48,14 @@ type translation_context = {
   functions : Tac.tac_function list;
   loop_stack : (int * int) list; (* A list of (l_start, l_end). *)
   current_ret_ty : b_type;
+  is_global_scope : bool;
 }
+
+let exit_global (ctx : translation_context) : translation_context =
+  { ctx with is_global_scope = false }
+
+let enter_global (ctx : translation_context) : translation_context =
+  { ctx with is_global_scope = true }
 
 let emit (instr : Tac.tac_instr) (ctx : translation_context) : translation_context =
   { ctx with current_ir = instr :: ctx.current_ir }
@@ -76,6 +84,7 @@ let merge_sub_block_context (inner : translation_context) (outer : translation_c
     {
       outer with
       obj_tys = IntMap.union (fun _ v_outer _ -> Some v_outer) outer.obj_tys inner.obj_tys;
+      obj_kinds = IntMap.union (fun _ v_outer _ -> Some v_outer) outer.obj_kinds inner.obj_kinds;
       next_obj_id = inner.next_obj_id;
       next_func_id = inner.next_func_id;
       next_label_id = inner.next_label_id;
@@ -99,9 +108,14 @@ let merge_func_context (id : int) (ast_node : Ast.func_def) (t_params : t_func_p
       func_body = List.rev body.current_ir;
       func_ret_type = tac_elem_type_of ret_ty;
       func_obj_types =
-        IntMap.map
-          (fun v -> { Tac.elem_ty = tac_elem_type_of v.elem_ty; is_array = v.dims <> [] })
-          body.obj_tys;
+        IntMap.to_seq body.obj_tys
+        |> Seq.filter_map (fun (id, v) ->
+            match IntMap.find_opt id body.obj_kinds with
+            | Some Global -> None
+            | Some _ ->
+                Some (id, { Tac.elem_ty = tac_elem_type_of v.elem_ty; is_array = v.dims <> [] })
+            | None -> None)
+        |> IntMap.of_seq;
     }
   in
   {
@@ -127,6 +141,14 @@ let alloc_label_id (ctx : translation_context) : int * translation_context =
 
 let alloc_named_obj (name : string) (ty : sem_type) (kind : obj_kind) (ctx : translation_context) :
     int * translation_context =
+  let _ =
+    match (ctx.is_global_scope, kind) with
+    | _, Temp -> internal_error "Use alloc_temp_obj to allocate temps"
+    | true, Global -> ()
+    | true, _ -> internal_error "Cannot allocate non-globals in global context"
+    | false, Global -> internal_error "Cannot allocate globals in non-global context"
+    | false, _ -> ()
+  in
   let id, ctx = alloc_obj_id ctx in
   ( id,
     {
@@ -147,6 +169,9 @@ let alloc_func (name : string) (args : sem_type list) (ret : b_type) (ctx : tran
     } )
 
 let alloc_temp_obj (ty : sem_type) (ctx : translation_context) : int * translation_context =
+  let _ =
+    if ctx.is_global_scope then internal_error "Cannot allocate temps in global context" else ()
+  in
   let id, ctx = alloc_obj_id ctx in
   ( id,
     {
@@ -167,6 +192,7 @@ let empty_translation_context =
     functions = [];
     loop_stack = [];
     current_ret_ty = VoidType;
+    is_global_scope = true;
   }
 
 let can_coerce_type (dst_ty : b_type) (src_ty : b_type) : bool =
@@ -386,7 +412,7 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
     match StringMap.find_opt name ctx.names with
     | None ->
         (* Add a fallback entry for undefined variable. *)
-        let id, ctx = alloc_named_obj name int_type Named ctx in
+        let id, ctx = alloc_named_obj name int_type Local ctx in
         agg_error
           (Printf.sprintf "Undefined variable `%s`" name)
           (TVar (id, name, [], int_type), { ty = int_type; const_val = None }, ctx)
@@ -541,8 +567,9 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
     | d :: ds ->
         let* dims_vals, dims_exprs, ctx = eval_dims d.Ast.const_dims [] [] ctx in
         let* t_init, ctx = translate_const_init d.Ast.const_init ctx in
+        let kind = if ctx.is_global_scope then Global else Local in
         let id, ctx =
-          alloc_named_obj d.Ast.const_name { elem_ty = ty; dims = dims_vals } Named ctx
+          alloc_named_obj d.Ast.const_name { elem_ty = ty; dims = dims_vals } kind ctx
         in
         let t_def =
           {
@@ -565,12 +592,14 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
               agg_ok (Some t_i, ctx)
           | None -> agg_ok (None, ctx)
         in
-        let id, ctx = alloc_named_obj d.Ast.var_name { elem_ty = ty; dims = dims_vals } Named ctx in
+        let kind = if ctx.is_global_scope then Global else Local in
+        let id, ctx = alloc_named_obj d.Ast.var_name { elem_ty = ty; dims = dims_vals } kind ctx in
         let init_stmt =
-          match t_init with
-          | Some (TInitExp init_exp) -> Some (TAssign (id, d.Ast.var_name, dims_exprs, init_exp))
-          | Some (TInitArray _) -> internal_error "todo"
-          | None -> None
+          match (kind, t_init) with
+          | Global, _ -> None
+          | _, Some (TInitExp init_exp) -> Some (TAssign (id, d.Ast.var_name, dims_exprs, init_exp))
+          | _, Some (TInitArray _) -> internal_error "TODO!"
+          | _, None -> None
         in
         let t_def =
           {
@@ -731,8 +760,9 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
                   process_params p_rest (arg_ty :: acc_arg_tys) (t_param :: acc_t_params) ctx
             in
             let ret_ty = b_type_from_ast_func f.Ast.func_ret_type in
-            let* arg_tys, t_params, ctx_params = process_params f.Ast.func_params [] [] ctx in
-            let func_id, ctx_body = alloc_func f.Ast.func_name arg_tys ret_ty ctx_params in
+            let ctx_body = exit_global ctx in
+            let* arg_tys, t_params, ctx_body = process_params f.Ast.func_params [] [] ctx_body in
+            let func_id, ctx_body = alloc_func f.Ast.func_name arg_tys ret_ty ctx_body in
             let* t_body, ctx_body = translate_block_items f.Ast.func_body ret_ty false ctx_body in
             let ctx_body = gen_stmt (TBlock t_body) ctx_body in
             let ctx = merge_func_context func_id f t_params arg_tys ret_ty ctx_body ctx in
@@ -749,10 +779,11 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
             agg_ok (TFuncDefItem t_func :: rest_items, ctx))
   in
   let result =
+    let ctx = enter_global ctx in
     let* comp_unit, ctx = translate_comp_unit_item_list comp_unit ctx in
     let globals =
       IntMap.bindings ctx.obj_kinds
-      |> List.filter_map (fun (id, kind) -> if kind = Named then Some id else None)
+      |> List.filter_map (fun (id, kind) -> if kind = Global then Some id else None)
     in
     let objects =
       IntMap.bindings ctx.obj_tys
