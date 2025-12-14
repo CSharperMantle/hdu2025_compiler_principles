@@ -522,6 +522,19 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
   | Ast.Binary (op, lhs, rhs) -> translate_binary op lhs rhs ctx
   | Ast.Call (name, params) -> translate_call name params ctx
 
+let rec expand_array_init_zeros (dims : int list) : (int list * t_exp) list =
+  match dims with
+  | [] -> [ ([], TIntLit 0) ]
+  | d :: rest ->
+      let sub_zeros = expand_array_init_zeros rest in
+      let rec aux i acc =
+        if i < 0 then acc
+        else
+          let shifted = List.map (fun (idxs, e) -> (i :: idxs, e)) sub_zeros in
+          aux (i - 1) (shifted @ acc)
+      in
+      aux (d - 1) []
+
 let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
     (t_comp_unit * Tac.tac_program, string list) result =
   let eval_const_dim e ctx =
@@ -582,6 +595,31 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
         let init_val = Option.map (fun v -> Tac.InitList v) init_vals in
         agg_ok (TInitArray t_vals, init_val, ctx)
   in
+  let rec expand_array_init dims init ctx =
+    match (dims, init) with
+    | [], TInitExp e -> agg_ok ([ ([], e) ], ctx)
+    | d :: rest_dims, TInitArray vals ->
+        let rec aux i vals_ptr acc ctx =
+          if i >= d then agg_ok (List.rev acc, ctx)
+          else
+            let* sub_inits, ctx =
+              match vals_ptr with
+              | [] -> agg_ok (expand_array_init_zeros rest_dims, ctx)
+              | v :: _ -> expand_array_init rest_dims v ctx
+            in
+            let shifted = List.map (fun (idxs, e) -> (i :: idxs, e)) sub_inits in
+            let next_vals =
+              match vals_ptr with
+              | [] -> []
+              | _ :: tl -> tl
+            in
+            aux (i + 1) next_vals (List.rev_append shifted acc) ctx
+        in
+        if List.length vals > d then agg_error "Too many initializers" ([], ctx)
+        else aux 0 vals [] ctx
+    | [], TInitArray _ -> agg_error "Initializer is an array but scalar expected" ([], ctx)
+    | _ :: _, TInitExp _ -> agg_error "Initializer is a scalar but array expected" ([], ctx)
+  in
   let rec add_const_defs defs ty acc_defs ctx =
     match defs with
     | [] -> agg_ok (List.rev acc_defs, ctx)
@@ -626,12 +664,22 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
           | Global, Some v -> { ctx with global_inits = IntMap.add id v ctx.global_inits }
           | _ -> ctx
         in
-        let init_stmt =
+        let* init_stmt, ctx =
           match (kind, t_init) with
-          | Global, _ -> None
-          | _, Some (TInitExp init_exp) -> Some (TAssign (id, d.Ast.var_name, dims_exprs, init_exp))
-          | _, Some (TInitArray _) -> internal_error "TODO!"
-          | _, None -> None
+          | Global, _ -> agg_ok (None, ctx)
+          | _, Some (TInitExp init_exp) ->
+              agg_ok (Some (TAssign (id, d.Ast.var_name, dims_exprs, init_exp)), ctx)
+          | _, Some (TInitArray _ as t_init_arr) ->
+              let* inits, ctx = expand_array_init dims_vals t_init_arr ctx in
+              let stmts =
+                List.map
+                  (fun (indices, expr) ->
+                    let t_indices = List.map (fun i -> TIntLit i) indices in
+                    TStmt (TAssign (id, d.Ast.var_name, t_indices, expr)))
+                  inits
+              in
+              agg_ok (Some (TBlock stmts), ctx)
+          | _, None -> agg_ok (None, ctx)
         in
         let t_def =
           {
