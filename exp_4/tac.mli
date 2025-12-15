@@ -20,20 +20,20 @@ type tac_init =
   | InitList of tac_init list
 
 type tac_instr =
-  | BinOp of int * Ast.bin_op * operand * operand (* %0 <- %1 %op.d %2 *)
+  | BinOp of int * Ast.bin_op * operand * operand (* %0 <- %1 %op.i %2 *)
   | FBinOp of int * Ast.bin_op * operand * operand (* %0 <- %1 %op.f %2 *)
-  | UnaryOp of int * Ast.unary_op * operand (* %0 <- %op.d %1 *)
+  | UnaryOp of int * Ast.unary_op * operand (* %0 <- %op.i %1 *)
   | FUnaryOp of int * Ast.unary_op * operand (* %0 <- %op.f %1 *)
   | Mv of int * operand (* %0 <- %1 *)
-  | Dtf of int * operand (* %0 <- %1.f *)
-  | Ftd of int * operand (* %0 <- %1.d *)
+  | Itf of int * operand (* %0 <- %1.f *)
+  | Fti of int * operand (* %0 <- %1.i *)
   | Label of int (* .L%0: *)
   | Jump of int (* jmp .L%0 *)
   | Jc of operand * int (* jc %0, .L%1 *)
   | Call of int * int * operand list (* %0 <- call %1, ...%2 *)
   | Return of operand option (* ret %0 *)
-  | Rd of int * int * operand (* %0 <- %1[%2] *)
-  | Wr of int * operand * operand (* %0[%1] <- %2 *)
+  | Rd of int * int * operand (* %0 <- %1[%2] TODO: Stride *)
+  | Wr of int * operand * operand (* %0[%1] <- %2 TODO: Stride *)
 
 type tac_function = {
   func_id : int;

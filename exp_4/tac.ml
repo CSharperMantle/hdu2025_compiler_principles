@@ -39,8 +39,8 @@ type tac_instr =
   | UnaryOp of int * Ast.unary_op * operand
   | FUnaryOp of int * Ast.unary_op * operand
   | Mv of int * operand
-  | Dtf of int * operand
-  | Ftd of int * operand
+  | Itf of int * operand
+  | Fti of int * operand
   | Label of int
   | Jump of int
   | Jc of operand * int
@@ -92,23 +92,23 @@ let prettify_unary_op = function
 
 let prettify_tac_instr = function
   | BinOp (dest, op, src1, src2) ->
-      Printf.sprintf "%s.d\t%s, %s, %s" (prettify_bin_op op) (prettify_operand (Object dest))
+      Printf.sprintf "%s.i\t%s, %s, %s" (prettify_bin_op op) (prettify_operand (Object dest))
         (prettify_operand src1) (prettify_operand src2)
   | FBinOp (dest, op, src1, src2) ->
       Printf.sprintf "%s.f\t%s, %s, %s" (prettify_bin_op op) (prettify_operand (Object dest))
         (prettify_operand src1) (prettify_operand src2)
   | UnaryOp (dest, op, src) ->
-      Printf.sprintf "%s.d\t%s, %s" (prettify_unary_op op) (prettify_operand (Object dest))
+      Printf.sprintf "%s.i\t%s, %s" (prettify_unary_op op) (prettify_operand (Object dest))
         (prettify_operand src)
   | FUnaryOp (dest, op, src) ->
       Printf.sprintf "%s.f\t%s, %s" (prettify_unary_op op) (prettify_operand (Object dest))
         (prettify_operand src)
   | Mv (dest, src) ->
       Printf.sprintf "mv\t%s, %s" (prettify_operand (Object dest)) (prettify_operand src)
-  | Dtf (dest, src) ->
-      Printf.sprintf "dtf\t%s, %s" (prettify_operand (Object dest)) (prettify_operand src)
-  | Ftd (dest, src) ->
-      Printf.sprintf "ftd\t%s, %s" (prettify_operand (Object dest)) (prettify_operand src)
+  | Itf (dest, src) ->
+      Printf.sprintf "itf\t%s, %s" (prettify_operand (Object dest)) (prettify_operand src)
+  | Fti (dest, src) ->
+      Printf.sprintf "fti\t%s, %s" (prettify_operand (Object dest)) (prettify_operand src)
   | Label l -> Printf.sprintf ".L%d:" l
   | Jump l -> Printf.sprintf "jmp\t.L%d" l
   | Jc (cond, l) -> Printf.sprintf "jc\t%s, .L%d" (prettify_operand cond) l

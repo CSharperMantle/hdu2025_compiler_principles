@@ -223,11 +223,11 @@ let coerce_type (opnd : Tac.operand) (dst_ty : b_type) (src_ty : b_type) (ctx : 
   | t1, t2 when t1 = t2 -> (opnd, ctx)
   | IntType, FloatType ->
       let temp, ctx = alloc_temp_obj int_type ctx in
-      let instr = Tac.Ftd (temp, opnd) in
+      let instr = Tac.Fti (temp, opnd) in
       (Tac.Object temp, emit instr ctx)
   | FloatType, IntType ->
       let temp, ctx = alloc_temp_obj float_type ctx in
-      let instr = Tac.Dtf (temp, opnd) in
+      let instr = Tac.Itf (temp, opnd) in
       (Tac.Object temp, emit instr ctx)
   | _ -> internal_error "Cannot coerce between these types"
 
