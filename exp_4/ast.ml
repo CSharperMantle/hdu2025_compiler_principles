@@ -14,7 +14,7 @@ type unary_op =
   | Neg
   | Not
 
-let unary_op_to_string = function
+let prettify_unary_op = function
   | Pos -> "+"
   | Neg -> "-"
   | Not -> "!"
@@ -34,7 +34,7 @@ type bin_op =
   | And
   | Or
 
-let bin_op_to_string = function
+let prettify_bin_op = function
   | Add -> "+"
   | Sub -> "-"
   | Mul -> "*"
@@ -113,26 +113,6 @@ type comp_unit_item =
 
 type comp_unit = comp_unit_item list
 
-let prettify_bin_op = function
-  | Add -> "+"
-  | Sub -> "-"
-  | Mul -> "*"
-  | Div -> "/"
-  | Mod -> "%"
-  | Eq -> "=="
-  | Neq -> "!="
-  | Lt -> "<"
-  | Leq -> "<="
-  | Gt -> ">"
-  | Geq -> ">="
-  | And -> "&&"
-  | Or -> "||"
-
-let prettify_unary_op = function
-  | Pos -> "+"
-  | Neg -> "-"
-  | Not -> "!"
-
 let prettify_id_name (name : string) : string = Printf.sprintf "Id name=%s" name
 
 let prettify_b_type (node : b_type) : string =
@@ -145,9 +125,9 @@ let rec prettify_exp (node : exp) : string list =
       let indices_lines = List.map prettify_exp indices |> List.flatten in
       "LVal" :: indent (prettify_id_name name :: indices_lines)
   | Unary (op, e) ->
-      Printf.sprintf "UnaryExp op='%s'" (unary_op_to_string op) :: indent (prettify_exp e)
+      Printf.sprintf "UnaryExp op='%s'" (prettify_unary_op op) :: indent (prettify_exp e)
   | Binary (op, e1, e2) ->
-      Printf.sprintf "BinaryExp op='%s'" (bin_op_to_string op)
+      Printf.sprintf "BinaryExp op='%s'" (prettify_bin_op op)
       :: indent (prettify_exp e1 @ prettify_exp e2)
   | Call (name, args) ->
       let args_lines = List.map prettify_exp args |> List.flatten in

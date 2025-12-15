@@ -38,7 +38,7 @@ type tac_instr =
   | FBinOp of int * Ast.bin_op * operand * operand
   | UnaryOp of int * Ast.unary_op * operand
   | FUnaryOp of int * Ast.unary_op * operand
-  | Mv of int * operand
+  | Move of int * operand
   | Itf of int * operand
   | Fti of int * operand
   | Label of int
@@ -46,8 +46,8 @@ type tac_instr =
   | Jc of operand * int
   | Call of int * int * operand list
   | Return of operand option
-  | Rd of int * int * operand
-  | Wr of int * operand * operand
+  | ArrRd of int * int * operand
+  | ArrWr of int * operand * operand
 
 type tac_function = {
   func_id : int;
@@ -70,62 +70,62 @@ let prettify_operand = function
   | Const c -> Printf.sprintf "%d" c
   | ConstFloat f -> Printf.sprintf "%f" f
 
-let prettify_bin_op = function
-  | Ast.Add -> "add"
-  | Ast.Sub -> "sub"
-  | Ast.Mul -> "mul"
-  | Ast.Div -> "div"
-  | Ast.Mod -> "mod"
-  | Ast.Eq -> "ceq"
-  | Ast.Neq -> "cne"
-  | Ast.Lt -> "clt"
-  | Ast.Leq -> "cle"
-  | Ast.Gt -> "cgt"
-  | Ast.Geq -> "cge"
-  | Ast.And -> "and"
-  | Ast.Or -> "or"
+let string_of_bin_op = function
+  | Ast.Add -> "Add"
+  | Ast.Sub -> "Sub"
+  | Ast.Mul -> "Mul"
+  | Ast.Div -> "Div"
+  | Ast.Mod -> "Mod"
+  | Ast.Eq -> "Eq"
+  | Ast.Neq -> "Neq"
+  | Ast.Lt -> "Lt"
+  | Ast.Leq -> "Leq"
+  | Ast.Gt -> "Gt"
+  | Ast.Geq -> "Geq"
+  | Ast.And -> "And"
+  | Ast.Or -> "Or"
 
-let prettify_unary_op = function
-  | Ast.Pos -> "pos"
-  | Ast.Neg -> "neg"
-  | Ast.Not -> "not"
+let string_of_unary_op = function
+  | Ast.Pos -> "Pos"
+  | Ast.Neg -> "Neg"
+  | Ast.Not -> "Not"
 
 let prettify_tac_instr = function
   | BinOp (dest, op, src1, src2) ->
-      Printf.sprintf "%s.i\t%s, %s, %s" (prettify_bin_op op) (prettify_operand (Object dest))
+      Printf.sprintf "%s.i\t(%s, %s, %s)" (string_of_bin_op op) (prettify_operand (Object dest))
         (prettify_operand src1) (prettify_operand src2)
   | FBinOp (dest, op, src1, src2) ->
-      Printf.sprintf "%s.f\t%s, %s, %s" (prettify_bin_op op) (prettify_operand (Object dest))
+      Printf.sprintf "%s.f\t(%s, %s, %s)" (string_of_bin_op op) (prettify_operand (Object dest))
         (prettify_operand src1) (prettify_operand src2)
   | UnaryOp (dest, op, src) ->
-      Printf.sprintf "%s.i\t%s, %s" (prettify_unary_op op) (prettify_operand (Object dest))
+      Printf.sprintf "%s.i\t(%s, %s)" (string_of_unary_op op) (prettify_operand (Object dest))
         (prettify_operand src)
   | FUnaryOp (dest, op, src) ->
-      Printf.sprintf "%s.f\t%s, %s" (prettify_unary_op op) (prettify_operand (Object dest))
+      Printf.sprintf "%s.f\t(%s, %s)" (string_of_unary_op op) (prettify_operand (Object dest))
         (prettify_operand src)
-  | Mv (dest, src) ->
-      Printf.sprintf "mv\t%s, %s" (prettify_operand (Object dest)) (prettify_operand src)
+  | Move (dest, src) ->
+      Printf.sprintf "Move\t(%s, %s)" (prettify_operand (Object dest)) (prettify_operand src)
   | Itf (dest, src) ->
-      Printf.sprintf "itf\t%s, %s" (prettify_operand (Object dest)) (prettify_operand src)
+      Printf.sprintf "Itf\t(%s, %s)" (prettify_operand (Object dest)) (prettify_operand src)
   | Fti (dest, src) ->
-      Printf.sprintf "fti\t%s, %s" (prettify_operand (Object dest)) (prettify_operand src)
+      Printf.sprintf "Fti\t(%s, %s)" (prettify_operand (Object dest)) (prettify_operand src)
   | Label l -> Printf.sprintf ".L%d:" l
-  | Jump l -> Printf.sprintf "jmp\t.L%d" l
-  | Jc (cond, l) -> Printf.sprintf "jc\t%s, .L%d" (prettify_operand cond) l
+  | Jump l -> Printf.sprintf "Jump\t(.L%d)" l
+  | Jc (cond, l) -> Printf.sprintf "Jc\t(%s, .L%d)" (prettify_operand cond) l
   | Call (dest, func_id, args) -> (
       match args with
-      | [] -> Printf.sprintf "call\t%s, $%d" (prettify_operand (Object dest)) func_id
+      | [] -> Printf.sprintf "Call\t(%s, $%d)" (prettify_operand (Object dest)) func_id
       | _ ->
           let args_str = List.map prettify_operand args |> String.concat ", " in
-          Printf.sprintf "call\t%s, $%d, %s" (prettify_operand (Object dest)) func_id args_str)
-  | Return (Some op) -> Printf.sprintf "ret\t%s" (prettify_operand op)
-  | Return None -> "ret"
-  | Rd (dest, base, offset) ->
-      Printf.sprintf "rd\t%s, %s[%s]" (prettify_operand (Object dest))
+          Printf.sprintf "Call\t(%s, $%d, %s)" (prettify_operand (Object dest)) func_id args_str)
+  | Return (Some op) -> Printf.sprintf "Ret\t(%s)" (prettify_operand op)
+  | Return None -> "Ret\t()"
+  | ArrRd (dest, base, offset) ->
+      Printf.sprintf "ArrRd\t(%s, %s, %s)" (prettify_operand (Object dest))
         (prettify_operand (Object base)) (prettify_operand offset)
-  | Wr (base, offset, src) ->
-      Printf.sprintf "wr\t%s, %s[%s]" (prettify_operand src) (prettify_operand (Object base))
-        (prettify_operand offset)
+  | ArrWr (base, offset, src) ->
+      Printf.sprintf "ArrWr\t(%s, %s, %s)" (prettify_operand (Object base))
+        (prettify_operand offset) (prettify_operand src)
 
 let prettify_obj_type (id : int) (ty : tac_obj_type) =
   Printf.sprintf "%s: %s" (prettify_operand (Object id)) (prettify_tac_obj_type ty)

@@ -289,7 +289,7 @@ and gen_exp (exp : t_exp) (ctx : translation_context) : Tac.operand * sem_type *
       let dims = (find_obj_type id ctx).dims in
       let opnd_index, ctx = gen_opnd_index indices dims ctx in
       let temp, ctx = alloc_temp_obj ty ctx in
-      let rd = Tac.Rd (temp, id, opnd_index) in
+      let rd = Tac.ArrRd (temp, id, opnd_index) in
       (Tac.Object temp, ty, ctx |> emit rd)
   | TUnary (op, e, res_ty) ->
       let opnd, sub_ty, ctx = gen_exp e ctx in
@@ -338,14 +338,14 @@ let rec gen_stmt (s : t_stmt) (ctx : translation_context) : translation_context 
       let rhs_opnd, rhs_ty, ctx = gen_exp rhs ctx in
       let lhs_ty = find_obj_type id ctx in
       let rhs_opnd, ctx = coerce_type rhs_opnd lhs_ty.elem_ty rhs_ty.elem_ty ctx in
-      let instr = Tac.Mv (id, rhs_opnd) in
+      let instr = Tac.Move (id, rhs_opnd) in
       { ctx with current_ir = instr :: ctx.current_ir }
   | TAssign (id, _, indices, rhs) ->
       let lhs_ty = find_obj_type id ctx in
       let rhs_opnd, rhs_ty, ctx = gen_exp rhs ctx in
       let rhs_opnd, ctx = coerce_type rhs_opnd lhs_ty.elem_ty rhs_ty.elem_ty ctx in
       let opnd_index, ctx = gen_opnd_index indices lhs_ty.dims ctx in
-      let wr = Tac.Wr (id, opnd_index, rhs_opnd) in
+      let wr = Tac.ArrWr (id, opnd_index, rhs_opnd) in
       ctx |> emit wr
   | TExprStmt (Some e) ->
       let _, _, ctx = gen_exp e ctx in

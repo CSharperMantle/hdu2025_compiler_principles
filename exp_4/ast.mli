@@ -9,7 +9,7 @@ type unary_op =
   | Neg
   | Not
 
-val unary_op_to_string : unary_op -> string
+val prettify_unary_op : unary_op -> string
 
 type bin_op =
   | Add
@@ -26,7 +26,7 @@ type bin_op =
   | And
   | Or
 
-val bin_op_to_string : bin_op -> string
+val prettify_bin_op : bin_op -> string
 
 type exp =
   | IntLit of int
@@ -92,6 +92,4 @@ type comp_unit_item =
 
 type comp_unit = comp_unit_item list
 
-val prettify_bin_op : bin_op -> string
-val prettify_unary_op : unary_op -> string
 val prettify_comp_unit : comp_unit -> string list

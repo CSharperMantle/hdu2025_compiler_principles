@@ -118,10 +118,10 @@ let rec prettify_t_exp (node : t_exp) : string list =
       Printf.sprintf "TLVal %s" (prettify_sem_type ty)
       :: (prettify_id_name (id, name) :: indices_lines |> indent)
   | TUnary (op, e, ty) ->
-      Printf.sprintf "TUnaryExp op='%s' %s" (Ast.unary_op_to_string op) (prettify_sem_type ty)
+      Printf.sprintf "TUnaryExp op='%s' %s" (Ast.prettify_unary_op op) (prettify_sem_type ty)
       :: (prettify_t_exp e |> indent)
   | TBinary (op, e1, e2, ty) ->
-      Printf.sprintf "TBinaryExp op='%s' %s" (Ast.bin_op_to_string op) (prettify_sem_type ty)
+      Printf.sprintf "TBinaryExp op='%s' %s" (Ast.prettify_bin_op op) (prettify_sem_type ty)
       :: (prettify_t_exp e1 @ prettify_t_exp e2 |> indent)
   | TCall (id, name, args, ty) ->
       let args_lines = List.map prettify_t_exp args |> List.flatten in
