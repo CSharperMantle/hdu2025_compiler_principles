@@ -266,17 +266,20 @@ let eval_binary_op (lv : int) (rv : int) = function
 
 let rec gen_opnd_index (indices : t_exp list) (dims : int list) (ctx : translation_context) :
     Tac.operand * translation_context =
-  Seq.zip (List.to_seq indices) (List.to_seq dims)
-  |> Seq.fold_left
-       (fun (acc, ctx) (i, n) ->
-         let opnd, opnd_ty, ctx = gen_exp i ctx in
-         let opnd, ctx = coerce_type opnd IntType opnd_ty.elem_ty ctx in
-         let temp_mul, ctx = alloc_temp_obj int_type ctx in
-         let mul = Tac.BinOp (temp_mul, Ast.Mul, acc, Tac.Const n) in
-         let temp_add, ctx = alloc_temp_obj int_type ctx in
-         let add = Tac.BinOp (temp_add, Ast.Add, Tac.Object temp_mul, opnd) in
-         (Tac.Object temp_add, ctx |> emit mul |> emit add))
-       (Tac.Const 0, ctx)
+  let idx_exp =
+    Seq.zip (List.to_seq indices) (List.to_seq dims)
+    |> Seq.fold_left
+         (fun acc (i, n) ->
+           match (acc, i) with
+           | TIntLit c_acc, TIntLit c_i -> TIntLit ((c_acc * n) + c_i)
+           | TIntLit 0, _ -> i
+           | _ ->
+               let mul = TBinary (Ast.Mul, acc, TIntLit n, int_type) in
+               TBinary (Ast.Add, mul, i, int_type))
+         (TIntLit 0)
+  in
+  let opnd, _, ctx = gen_exp idx_exp ctx in
+  (opnd, ctx)
 
 and gen_exp (exp : t_exp) (ctx : translation_context) : Tac.operand * sem_type * translation_context
     =
