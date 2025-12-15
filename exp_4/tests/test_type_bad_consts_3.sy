@@ -1,0 +1,13 @@
+int g1 = 1;
+const int g2 = g1;         // Cannot assign non-constant 'g1' to constant 'g2'
+const int g3 = 3;
+
+int foo(int a) {
+    int b = 2;
+    const int x1 = a;      // Cannot assign non-constant 'a' to constant 'x1'
+    const int x2 = g1;     // Cannot assign non-constant 'g1' to constant 'x2'
+    const int x3 = g2 + b; // Cannot assign non-constant expression 'g2 + b' to constant 'x3'
+    const int x4 = g3;     // This is good
+
+    return x1 + x2 + x3 + x4;
+}

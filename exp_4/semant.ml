@@ -15,6 +15,7 @@ type name_entry =
   | VarEntry of {
       id : int;
       ty : sem_type;
+      const_val : int option;
     }
   | FuncEntry of {
       id : int;
@@ -140,8 +141,8 @@ let alloc_func_id (ctx : translation_context) : int * translation_context =
 let alloc_label_id (ctx : translation_context) : int * translation_context =
   (ctx.next_label_id, { ctx with next_label_id = ctx.next_label_id + 1 })
 
-let alloc_named_obj (name : string) (ty : sem_type) (kind : obj_kind) (ctx : translation_context) :
-    int * translation_context =
+let alloc_named_obj (name : string) (ty : sem_type) (kind : obj_kind) (const_val : int option)
+    (ctx : translation_context) : int * translation_context =
   let _ =
     match (ctx.is_global_scope, kind) with
     | _, Temp -> internal_error "Use alloc_temp_obj to allocate temps"
@@ -154,7 +155,7 @@ let alloc_named_obj (name : string) (ty : sem_type) (kind : obj_kind) (ctx : tra
   ( id,
     {
       ctx with
-      names = StringMap.add name (VarEntry { id; ty }) ctx.names;
+      names = StringMap.add name (VarEntry { id; ty; const_val }) ctx.names;
       obj_kinds = IntMap.add id kind ctx.obj_kinds;
       obj_tys = IntMap.add id ty ctx.obj_tys;
     } )
@@ -422,31 +423,37 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
         else agg_ok (current_exprs, ctx)
     | _ -> agg_error "Argument count mismatch" ([], ctx)
   in
+  let translate_var_scalar name id ty const_val ctx =
+    let t_node = TVar (id, name, [], ty) in
+    agg_ok (t_node, { ty; const_val }, ctx)
+  and translate_var_array name id ty indices ctx =
+    let* indices_results, ctx = translate_indices indices ctx in
+    let t_indices = List.map fst indices_results in
+    let idx_count = List.length indices and dim_count = List.length ty.dims in
+
+    if idx_count > dim_count then
+      agg_error "Too many subscripts for array"
+        (TVar (id, name, t_indices, ty), { ty; const_val = None }, ctx)
+    else
+      let dims' = List.drop idx_count ty.dims in
+      let ty = { elem_ty = ty.elem_ty; dims = dims' } in
+      let t_node = TVar (id, name, t_indices, ty) in
+      agg_ok (t_node, { ty; const_val = None }, ctx)
+  in
   let translate_var name indices ctx =
-    match StringMap.find_opt name ctx.names with
-    | None ->
+    match (StringMap.find_opt name ctx.names, indices) with
+    | None, _ ->
         (* Add a fallback entry for undefined variable. *)
-        let id, ctx = alloc_named_obj name int_type Local ctx in
+        let id, ctx = alloc_named_obj name int_type Local None ctx in
         agg_error
           (Printf.sprintf "Undefined variable `%s`" name)
           (TVar (id, name, [], int_type), { ty = int_type; const_val = None }, ctx)
-    | Some (FuncEntry _) ->
+    | Some (FuncEntry _), _ ->
         agg_error
           (Printf.sprintf "`%s` is a function, not a variable" name)
           (fallback_texp, fallback_exp_attr, ctx)
-    | Some (VarEntry v) ->
-        let* indices_results, ctx = translate_indices indices ctx in
-        let t_indices = List.map fst indices_results in
-        let idx_count = List.length indices and dim_count = List.length v.ty.dims in
-
-        if idx_count > dim_count then
-          agg_error "Too many subscripts for array"
-            (TVar (v.id, name, t_indices, v.ty), { ty = v.ty; const_val = None }, ctx)
-        else
-          let dims' = List.drop idx_count v.ty.dims in
-          let ty = { elem_ty = v.ty.elem_ty; dims = dims' } in
-          let t_node = TVar (v.id, name, t_indices, ty) in
-          agg_ok (t_node, { ty; const_val = None }, ctx)
+    | Some (VarEntry v), [] -> translate_var_scalar name v.id v.ty v.const_val ctx
+    | Some (VarEntry v), indices -> translate_var_array name v.id v.ty indices ctx
   and translate_unary op sub ctx =
     let* sub_expr, sub_attr, ctx = translate_exp sub ctx in
     match op with
@@ -608,29 +615,66 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
               | v :: _ -> expand_array_init rest_dims v ctx
             in
             let shifted = List.map (fun (idxs, e) -> (i :: idxs, e)) sub_inits in
-            let next_vals =
-              match vals_ptr with
-              | [] -> []
-              | _ :: tl -> tl
-            in
+            let next_vals = tl_or [] vals_ptr in
             aux (i + 1) next_vals (List.rev_append shifted acc) ctx
         in
         if List.length vals > d then agg_error "Too many initializers" ([], ctx)
         else aux 0 vals [] ctx
     | [], TInitArray _ -> agg_error "Initializer is an array but scalar expected" ([], ctx)
     | _ :: _, TInitExp _ -> agg_error "Initializer is a scalar but array expected" ([], ctx)
+  and expand_const_array_init dims init ctx =
+    match (dims, init) with
+    | [], TConstExp e -> agg_ok ([ ([], e) ], ctx)
+    | d :: rest_dims, TConstArray vals ->
+        let rec aux i vals_ptr acc ctx =
+          if i >= d then agg_ok (List.rev acc, ctx)
+          else
+            let* sub_inits, ctx =
+              match vals_ptr with
+              | [] -> agg_ok (expand_array_init_zeros rest_dims, ctx)
+              | v :: _ -> expand_const_array_init rest_dims v ctx
+            in
+            let shifted = List.map (fun (idxs, e) -> (i :: idxs, e)) sub_inits in
+            let next_vals = tl_or [] vals_ptr in
+            aux (i + 1) next_vals (List.rev_append shifted acc) ctx
+        in
+        if List.length vals > d then agg_error "Too many initializers" ([], ctx)
+        else aux 0 vals [] ctx
+    | [], TConstArray _ -> agg_error "Initializer is an array but scalar expected" ([], ctx)
+    | _ :: _, TConstExp _ -> agg_error "Initializer is a scalar but array expected" ([], ctx)
   in
-  let rec add_const_defs defs ty acc_defs ctx =
+  let rec add_const_defs defs ty acc_defs acc_stmts ctx =
     match defs with
-    | [] -> agg_ok (List.rev acc_defs, ctx)
+    | [] -> agg_ok (List.rev acc_defs, List.rev acc_stmts, ctx)
     | d :: ds ->
         let* dims_vals, dims_exprs, ctx = eval_dims d.Ast.const_dims [] [] ctx in
         let* t_init, init_val, ctx = translate_const_init d.Ast.const_init ctx in
         let kind = if ctx.is_global_scope then Global else Local in
+        let const_val =
+          match (ty, dims_vals, init_val) with
+          | IntType, [], Tac.InitInt v -> Some v
+          | _ -> None
+        in
         let id, ctx =
-          alloc_named_obj d.Ast.const_name { elem_ty = ty; dims = dims_vals } kind ctx
+          alloc_named_obj d.Ast.const_name { elem_ty = ty; dims = dims_vals } kind const_val ctx
         in
         let ctx = if kind = Global then insert_global_init id init_val ctx else ctx in
+        let* init_stmt, ctx =
+          match (kind, t_init) with
+          | Global, _ -> agg_ok (None, ctx)
+          | _, TConstExp init_exp ->
+              agg_ok (Some (TAssign (id, d.Ast.const_name, dims_exprs, init_exp)), ctx)
+          | _, (TConstArray _ as t_init_arr) ->
+              let* inits, ctx = expand_const_array_init dims_vals t_init_arr ctx in
+              let stmts =
+                List.map
+                  (fun (indices, expr) ->
+                    let t_indices = List.map (fun i -> TIntLit i) indices in
+                    TStmt (TAssign (id, d.Ast.const_name, t_indices, expr)))
+                  inits
+              in
+              agg_ok (Some (TBlock stmts), ctx)
+        in
         let t_def =
           {
             t_const_id = id;
@@ -639,7 +683,8 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
             t_const_init = t_init;
           }
         in
-        add_const_defs ds ty (t_def :: acc_defs) ctx
+        let acc_stmts = map_or (fun s -> s :: acc_stmts) acc_stmts init_stmt in
+        add_const_defs ds ty (t_def :: acc_defs) acc_stmts ctx
   and add_var_defs defs ty acc_defs acc_stmts ctx =
     match defs with
     | [] -> agg_ok (List.rev acc_defs, List.rev acc_stmts, ctx)
@@ -653,7 +698,9 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
           | None -> agg_ok (None, None, ctx)
         in
         let kind = if ctx.is_global_scope then Global else Local in
-        let id, ctx = alloc_named_obj d.Ast.var_name { elem_ty = ty; dims = dims_vals } kind ctx in
+        let id, ctx =
+          alloc_named_obj d.Ast.var_name { elem_ty = ty; dims = dims_vals } kind None ctx
+        in
         let* _ =
           if kind = Global && d.Ast.var_init <> None && init_val = None then
             agg_error "Global initializer must be constant" ()
@@ -706,7 +753,9 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
         in
         let res_stmt = TAssign (id, name, t_indices, rhs_expr) in
 
-        if lhs_attr.ty.dims <> [] || rhs_attr.ty.dims <> [] then
+        if Option.is_some lhs_attr.const_val then
+          agg_error "Cannot assign to constant variable" (res_stmt, ctx)
+        else if lhs_attr.ty.dims <> [] || rhs_attr.ty.dims <> [] then
           agg_error "Assignment operands must be scalars" (res_stmt, ctx)
         else if lhs_attr.ty.elem_ty = VoidType then
           agg_error "Cannot assign to `void`" (res_stmt, ctx)
@@ -790,8 +839,10 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
               let stmt_items = List.map (fun s -> TStmt s) init_stmts in
               agg_ok (decl_item :: stmt_items, ctx)
           | Ast.Decl (Ast.ConstDecl (t, defs)) ->
-              let* t_defs, ctx = add_const_defs defs (b_type_from_ast t) [] ctx in
-              agg_ok ([ TDecl (TConstDecl (b_type_from_ast t, t_defs)) ], ctx)
+              let* t_defs, init_stmts, ctx = add_const_defs defs (b_type_from_ast t) [] [] ctx in
+              let decl_item = TDecl (TConstDecl (b_type_from_ast t, t_defs)) in
+              let stmt_items = List.map (fun s -> TStmt s) init_stmts in
+              agg_ok (decl_item :: stmt_items, ctx)
           | Ast.Stmt s ->
               let* t_s, ctx = translate_stmt s ret_ty in_loop ctx in
               agg_ok ([ TStmt t_s ], ctx)
@@ -810,7 +861,7 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
             let* rest_items, ctx = translate_comp_unit_item_list rest ctx in
             agg_ok (t_item :: rest_items, ctx)
         | Ast.DeclItem (Ast.ConstDecl (t, defs)) ->
-            let* t_defs, ctx = add_const_defs defs (b_type_from_ast t) [] ctx in
+            let* t_defs, _, ctx = add_const_defs defs (b_type_from_ast t) [] [] ctx in
             let t_item = TDeclItem (TConstDecl (b_type_from_ast t, t_defs)) in
             let* rest_items, ctx = translate_comp_unit_item_list rest ctx in
             agg_ok (t_item :: rest_items, ctx)
@@ -828,7 +879,7 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
                         agg_ok (0 :: d_vals, Some d_exprs, ctx)
                   in
                   let arg_ty = { elem_ty = ty; dims = dims_vals } in
-                  let id, ctx = alloc_named_obj p.param_name arg_ty Param ctx in
+                  let id, ctx = alloc_named_obj p.param_name arg_ty Param None ctx in
                   let t_param =
                     {
                       t_param_id = id;

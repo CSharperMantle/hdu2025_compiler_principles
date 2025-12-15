@@ -31,3 +31,7 @@ let map_or (f : 'a -> 'b) (default : 'b) (opt : 'a option) : 'b =
   match opt with
   | Some v -> f v
   | None -> default
+
+let tl_or (default : 'a list) = function
+  | [] -> default
+  | _ :: l -> l

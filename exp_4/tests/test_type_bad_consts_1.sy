@@ -1,0 +1,5 @@
+int foo(int a) {
+    const int x = 1;
+    x = x + a;
+    return x;
+}

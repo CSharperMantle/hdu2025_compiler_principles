@@ -19,6 +19,11 @@ type	tests/test_type_bad_return_2.sy	failure	Error type semant_error	1
 type	tests/test_type_bad_multi_error_1.sy	failure	Error type semant_error	4
 type	tests/test_type_bad_scopes_1.sy	failure	Error type semant_error	1
 type	tests/test_type_bad_scopes_2.sy	failure	Error type semant_error	1
+type	tests/test_type_bad_consts_1.sy	failure	Error type semant_error	1
+type	tests/test_type_bad_consts_2.sy	failure	Error type semant_error	1
+type	tests/test_type_bad_consts_3.sy	failure	Error type semant_error	4
 tac	tests/test_tac_scopes_1.sy	success		
 tac	tests/test_tac_scopes_2.sy	success		
 tac	tests/test_tac_conversions_1.sy	success		
+tac	tests/test_parser_array_1.sy	success		
+tac	tests/test_parser_array_2.sy	success		
