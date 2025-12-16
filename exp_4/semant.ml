@@ -429,8 +429,8 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
     match (args, pms) with
     | [], [] -> agg_ok ([], ctx)
     | a :: a_rest, p_ty :: p_rest ->
-        let* a_expr, a_attr, cyx = translate_exp a ctx in
-        let* rest_exprs, ctx = translate_args a_rest p_rest cyx in
+        let* a_expr, a_attr, ctx = translate_exp a ctx in
+        let* rest_exprs, ctx = translate_args a_rest p_rest ctx in
         let current_exprs = a_expr :: rest_exprs in
 
         if a_attr.ty.dims <> p_ty.dims then
