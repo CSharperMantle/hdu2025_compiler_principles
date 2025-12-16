@@ -29,7 +29,7 @@ type tac_instr =
   | Fti of int * operand (* %0 <- %1.i *)
   | Label of int (* .L%0: *)
   | Jump of int (* jmp .L%0 *)
-  | Jc of operand * int (* jc %0, .L%1 *)
+  | Br of operand * int (* br %0, .L%1 *)
   | Call of int * int * operand list (* %0 <- call %1, ...%2 *)
   | Return of operand option (* ret %0 *)
   | ArrRd of int * int * operand * operand list (* %0 <- %1[%2] aka %1[...%3] *)

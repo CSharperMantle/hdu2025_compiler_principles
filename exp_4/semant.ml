@@ -384,7 +384,7 @@ let rec gen_stmt (s : t_stmt) (ctx : translation_context) : translation_context 
       let cond_opnd, _, ctx = gen_exp cond ctx in
       let l_then, ctx = alloc_label_id ctx in
       let l_end, ctx = alloc_label_id ctx in
-      let ctx = ctx |> emit (Tac.Jc (cond_opnd, l_then)) in
+      let ctx = ctx |> emit (Tac.Br (cond_opnd, l_then)) in
       map_or (fun else_s -> gen_stmt else_s ctx) ctx else_s_opt
       |> emit (Tac.Jump l_end) |> emit (Tac.Label l_then) |> gen_stmt then_s
       |> emit (Tac.Label l_end)
@@ -395,7 +395,7 @@ let rec gen_stmt (s : t_stmt) (ctx : translation_context) : translation_context 
       let ctx = ctx |> emit (Tac.Label l_start) |> enter_loop (l_start, l_end) in
       let cond_opnd, _, ctx = gen_exp cond ctx in
       ctx
-      |> emit (Tac.Jc (cond_opnd, l_body))
+      |> emit (Tac.Br (cond_opnd, l_body))
       |> emit (Tac.Jump l_end) |> emit (Tac.Label l_body) |> gen_stmt body
       |> emit (Tac.Jump l_start) |> emit (Tac.Label l_end) |> exit_loop
   | TBreak -> (

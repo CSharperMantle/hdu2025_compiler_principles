@@ -43,7 +43,7 @@ type tac_instr =
   | Fti of int * operand
   | Label of int
   | Jump of int
-  | Jc of operand * int
+  | Br of operand * int
   | Call of int * int * operand list
   | Return of operand option
   | ArrRd of int * int * operand * operand list
@@ -111,7 +111,7 @@ let prettify_tac_instr = function
       Printf.sprintf "Fti\t(%s, %s)" (prettify_operand (Object dest)) (prettify_operand src)
   | Label l -> Printf.sprintf ".L%d:" l
   | Jump l -> Printf.sprintf "Jump\t(.L%d)" l
-  | Jc (cond, l) -> Printf.sprintf "Jc\t(%s, .L%d)" (prettify_operand cond) l
+  | Br (cond, l) -> Printf.sprintf "Br\t(%s, .L%d)" (prettify_operand cond) l
   | Call (dest, func_id, args) -> (
       match args with
       | [] -> Printf.sprintf "Call\t(%s, $%d)" (prettify_operand (Object dest)) func_id
