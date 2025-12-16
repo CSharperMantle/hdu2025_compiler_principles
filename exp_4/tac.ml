@@ -117,7 +117,7 @@ let prettify_tac_instr = function
       | [] -> Printf.sprintf "Call\t(%s, $%d)" (prettify_operand (Object dest)) func_id
       | _ ->
           let args_str = List.map prettify_operand args |> String.concat ", " in
-          Printf.sprintf "Call\t(%s, $%d, %s)" (prettify_operand (Object dest)) func_id args_str)
+          Printf.sprintf "Call\t(%s, $%d, [%s])" (prettify_operand (Object dest)) func_id args_str)
   | Return (Some op) -> Printf.sprintf "Ret\t(%s)" (prettify_operand op)
   | Return None -> "Ret\t()"
   | ArrRd (dest, base, offset, indices) ->
