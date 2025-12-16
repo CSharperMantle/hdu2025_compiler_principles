@@ -385,7 +385,7 @@ let rec gen_stmt (s : t_stmt) (ctx : translation_context) : translation_context 
       let l_then, ctx = alloc_label_id ctx in
       let l_end, ctx = alloc_label_id ctx in
       let ctx = ctx |> emit (Tac.Br (cond_opnd, l_then)) in
-      map_or (fun else_s -> gen_stmt else_s ctx) ctx else_s_opt
+      map_or_default (fun else_s -> gen_stmt else_s ctx) ctx else_s_opt
       |> emit (Tac.Jump l_end) |> emit (Tac.Label l_then) |> gen_stmt then_s
       |> emit (Tac.Label l_end)
   | TWhile (cond, body) ->
@@ -719,7 +719,7 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
             t_const_init = t_init;
           }
         in
-        let acc_stmts = map_or (fun s -> s :: acc_stmts) acc_stmts init_stmt in
+        let acc_stmts = map_or_default (fun s -> s :: acc_stmts) acc_stmts init_stmt in
         add_const_defs ds ty (t_def :: acc_defs) acc_stmts ctx
   and add_var_defs defs ty acc_defs acc_stmts ctx =
     match defs with
@@ -772,7 +772,7 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
             t_var_init = t_init;
           }
         in
-        let acc_stmts = map_or (fun s -> s :: acc_stmts) acc_stmts init_stmt in
+        let acc_stmts = map_or_default (fun s -> s :: acc_stmts) acc_stmts init_stmt in
         add_var_defs ds ty (t_def :: acc_defs) acc_stmts ctx
   in
 

@@ -6,6 +6,7 @@ type value = int * int (* (base id, version) *)
 
 let new_value (id : int) : value = (id, 0)
 let prettify_value (v : value) : string = Printf.sprintf "%%%d/%d" (fst v) (snd v)
+let id_of_value (v : value) : int = fst v
 
 type operand =
   | Value of value
@@ -103,7 +104,7 @@ let prettify_terminator = function
       Printf.sprintf "Br\t(%s, %s, %s)" (prettify_operand cond)
         (prettify_basic_block_id bb_truthy)
         (prettify_basic_block_id bb_falsy)
-  | Return retval -> Printf.sprintf "Return\t(%s)" (map_or prettify_operand "" retval)
+  | Return retval -> Printf.sprintf "Return\t(%s)" (map_or_default prettify_operand "" retval)
 
 type basic_block = {
   bb_id : int;
@@ -182,12 +183,32 @@ let prettify_program (p : program) : string =
   let funcs_str = List.map prettify_func p.functions |> String.concat "\n\n" in
   globals_str ^ "\n\n" ^ funcs_str
 
-type build_ssa_context = { next_bb_id : int }
+(*
+  Context for building SSA.
+
+  Should be okay to share between functions since BB id are unique.
+*)
+type build_ssa_context = {
+  next_bb_id : int;
+  successors : IntSet.t IntMap.t;
+  predecessors : IntSet.t IntMap.t;
+  dom_frontier : IntSet.t IntMap.t;
+  idom : int IntMap.t;
+  dom_tree : IntSet.t IntMap.t;
+}
 
 let alloc_bb_id (ctx : build_ssa_context) : int * build_ssa_context =
-  (ctx.next_bb_id, { next_bb_id = succ ctx.next_bb_id })
+  (ctx.next_bb_id, { ctx with next_bb_id = ctx.next_bb_id + 1 })
 
-let empty_build_ssa_context : build_ssa_context = { next_bb_id = 0 }
+let empty_build_ssa_context : build_ssa_context =
+  {
+    next_bb_id = 0;
+    successors = IntMap.empty;
+    predecessors = IntMap.empty;
+    dom_frontier = IntMap.empty;
+    idom = IntMap.empty;
+    dom_tree = IntMap.empty;
+  }
 
 let rec partition_cfg_blocks (instrs : Tac.tac_instr list) (acc_labels : int list)
     (curr_code : Tac.tac_instr list) (blocks : proto_block list) (ctx : build_ssa_context) :
@@ -213,8 +234,9 @@ let rec partition_cfg_blocks (instrs : Tac.tac_instr list) (acc_labels : int lis
           partition_cfg_blocks rest [] [] (blk :: blocks) ctx
       | _ -> partition_cfg_blocks rest acc_labels (instr :: curr_code) blocks ctx)
 
-let build_func_cfg (f : Tac.tac_function) (ctx : build_ssa_context) : func * build_ssa_context =
-  let pbs, ctx = partition_cfg_blocks f.func_body [] [] [] ctx in
+let build_func_cfg (tac_func : Tac.tac_function) (ctx : build_ssa_context) :
+    func * build_ssa_context =
+  let pbs, ctx = partition_cfg_blocks tac_func.func_body [] [] [] ctx in
   let labels =
     List.to_seq pbs
     |> Seq.flat_map (fun pb -> List.to_seq pb.labels |> Seq.map (fun l -> (l, pb.id)))
@@ -255,33 +277,479 @@ let build_func_cfg (f : Tac.tac_function) (ctx : build_ssa_context) : func * bui
   in
   let bbs = process_blocks pbs in
   let func_blocks = List.to_seq bbs |> Seq.map (fun bb -> (bb.bb_id, bb)) |> IntMap.of_seq in
-  let func =
+
+  (* Calculate successors from terminators *)
+  let successors =
+    List.fold_left
+      (fun acc bb ->
+        let succs =
+          match bb.bb_term with
+          | Jump target -> IntSet.singleton target
+          | Br (_, true_target, false_target) -> IntSet.of_list [ true_target; false_target ]
+          | Return _ -> IntSet.empty
+        in
+        IntMap.add bb.bb_id succs acc)
+      IntMap.empty bbs
+  in
+
+  (* Calculate predecessors by inverting successors *)
+  let predecessors =
+    IntMap.fold
+      (fun bb_id succs acc ->
+        IntSet.fold
+          (fun succ_id acc ->
+            let existing = IntMap.find_opt succ_id acc |> or_default IntSet.empty in
+            IntMap.add succ_id (IntSet.add bb_id existing) acc)
+          succs acc)
+      successors IntMap.empty
+  in
+  let ctx = { ctx with successors; predecessors }
+  and func =
     {
-      func_id = f.func_id;
-      func_name = f.func_name;
-      func_params = List.map new_value f.func_params;
+      func_id = tac_func.func_id;
+      func_name = tac_func.func_name;
+      func_params = List.map new_value tac_func.func_params;
       func_entry_block = (List.hd bbs).bb_id;
       func_blocks;
-      func_ret_type = f.func_ret_type;
-      func_obj_types = f.func_obj_types;
+      func_ret_type = tac_func.func_ret_type;
+      func_obj_types = tac_func.func_obj_types;
     }
   in
   (func, ctx)
 
-let build_cfg (p : Tac.tac_program) (ctx : build_ssa_context) : program * build_ssa_context =
+let build_cfg (program : Tac.tac_program) (ctx : build_ssa_context) : program * build_ssa_context =
   let functions, ctx =
     List.fold_left
       (fun (funcs, ctx) tac_f ->
         let f, ctx = build_func_cfg tac_f ctx in
         (f :: funcs, ctx))
-      ([], ctx) p.functions
+      ([], ctx) program.functions
   in
   let program =
     {
-      globals = p.globals;
-      global_init = p.global_init;
+      globals = program.globals;
+      global_init = program.global_init;
       functions = List.rev functions;
-      objects = p.objects;
+      objects = program.objects;
     }
   in
   (program, ctx)
+
+let def_id_of = function
+  | BinOp ((id, _), _, _, _)
+  | FBinOp ((id, _), _, _, _)
+  | UnaryOp ((id, _), _, _)
+  | FUnaryOp ((id, _), _, _)
+  | Move ((id, _), _)
+  | Itf ((id, _), _)
+  | Fti ((id, _), _)
+  | Call ((id, _), _, _)
+  | ArrRd ((id, _), _, _) -> Some id
+  | ArrWr _ -> None
+
+type lt_state = {
+  dfnum : int IntMap.t;
+  vertex : int IntMap.t;
+  parent : int IntMap.t;
+  semi : int IntMap.t;
+  ancestor : int IntMap.t;
+  label : int IntMap.t;
+  bucket : int list IntMap.t;
+  dom : int IntMap.t;
+  n : int;
+}
+
+(* Algorithm 19.9, "Modern Compiler Implementation in C", Appel. *)
+let lengauer_tarjan (func : func) (ctx : build_ssa_context) : int IntMap.t =
+  let link v w state = { state with ancestor = IntMap.add w v state.ancestor } in
+  let rec compress v state =
+    match IntMap.find_opt v state.ancestor with
+    | None -> state
+    | Some a -> (
+        match IntMap.find_opt a state.ancestor with
+        | None -> state
+        | Some _ ->
+            let state = compress a state in
+            let a_label = IntMap.find a state.label and v_label = IntMap.find v state.label in
+            let semi_a = IntMap.find a_label state.semi
+            and semi_v = IntMap.find v_label state.semi in
+            let new_label = if semi_a < semi_v then a_label else v_label
+            and new_ancestor = IntMap.find a state.ancestor in
+            {
+              state with
+              ancestor = IntMap.add v new_ancestor state.ancestor;
+              label = IntMap.add v new_label state.label;
+            })
+  in
+  let eval v state =
+    match IntMap.find_opt v state.ancestor with
+    | None -> (v, state)
+    | Some _ ->
+        let state = compress v state in
+        let label = IntMap.find v state.label in
+        (label, state)
+  in
+  (* DFS part of the algorithm. *)
+  let rec dfs u succs state =
+    let n' = state.n + 1 in
+    let state =
+      {
+        state with
+        dfnum = IntMap.add u n' state.dfnum;
+        vertex = IntMap.add n' u state.vertex;
+        semi = IntMap.add u n' state.semi;
+        label = IntMap.add u u state.label;
+        n = n';
+      }
+    in
+    let u_succs = IntMap.find_opt u succs |> or_default IntSet.empty in
+    IntSet.fold
+      (fun v state ->
+        if IntMap.mem v state.dfnum then state
+        else
+          let state' = { state with parent = IntMap.add v u state.parent } in
+          dfs v succs state')
+      u_succs state
+  in
+  let rec loop_1 i preds state =
+    if i < 2 then state
+    else
+      let n = IntMap.find i state.vertex in
+      let p = IntMap.find n state.parent in
+      let n_preds = IntMap.find_opt n preds |> or_default IntSet.empty in
+      (* for each predecessor v of n *)
+      let state =
+        IntSet.fold
+          (fun v state ->
+            let u, acc_state = eval v state in
+            let semi_u = IntMap.find u acc_state.semi and semi_n = IntMap.find n acc_state.semi in
+            if semi_u < semi_n then { acc_state with semi = IntMap.add n semi_u acc_state.semi }
+            else acc_state)
+          n_preds state
+      in
+      let semi_n = IntMap.find (IntMap.find n state.semi) state.vertex in
+      let state = { state with bucket = prepend_int_or_singleton_list semi_n n state.bucket } in
+      let state = link p n state in
+      let bucket_p = IntMap.find_opt p state.bucket |> or_default [] in
+      (* for each v in bucket[p] *)
+      let state =
+        List.fold_left
+          (fun state v ->
+            let y, state = eval v state in
+            let semi_y = IntMap.find y state.semi and semi_v = IntMap.find v state.semi in
+            let dom_v = if semi_y < semi_v then y else p in
+            { state with dom = IntMap.add v dom_v state.dom })
+          state bucket_p
+      in
+      let state = { state with bucket = IntMap.remove p state.bucket } in
+      loop_1 (i - 1) preds state
+  in
+  let rec loop_2 i state =
+    if i > state.n then state
+    else
+      let w = IntMap.find i state.vertex in
+      let state =
+        if i = 1 then state
+        else
+          let d = IntMap.find w state.dom in
+          let w_semi_node = IntMap.find (IntMap.find w state.semi) state.vertex in
+          if d <> w_semi_node then
+            { state with dom = IntMap.add w (IntMap.find d state.dom) state.dom }
+          else state
+      in
+      loop_2 (i + 1) state
+  in
+
+  let preds = ctx.predecessors
+  and succs = ctx.successors
+  and state =
+    {
+      dfnum = IntMap.empty;
+      vertex = IntMap.empty;
+      parent = IntMap.empty;
+      semi = IntMap.empty;
+      ancestor = IntMap.empty;
+      label = IntMap.empty;
+      bucket = IntMap.empty;
+      dom = IntMap.empty;
+      n = 0;
+    }
+  in
+  let state = dfs func.func_entry_block succs state in
+  (* for i <- N − 1 downto 1 *)
+  let state = loop_1 state.n preds state in
+  (* for i <- 1 to N − 1 *)
+  let state = loop_2 2 state in
+  state.dom
+
+let compute_dom_frontier (func : func) (ctx : build_ssa_context) : build_ssa_context =
+  (*
+    computeDF[n]
+    Chapter 19.1.2 "The Dominance Frontier", "Modern Compiler Implementation in C", Appel.
+  *)
+  let rec compute_df (n : int) (ctx : build_ssa_context) : build_ssa_context =
+    let succ = IntMap.find_opt n ctx.successors |> or_default IntSet.empty in
+    let df_local =
+      IntSet.filter_map
+        (fun y ->
+          IntMap.find_opt y ctx.idom
+          |> Option.map (fun idom_y -> if idom_y <> n then Some y else None)
+          |> Option.join)
+        succ
+    in
+    let df_up, ctx =
+      IntSet.fold
+        (fun c (s, ctx) ->
+          let ctx = compute_df c ctx in
+          let df_c =
+            IntMap.find_opt c ctx.dom_frontier
+            |> or_else (fun () -> internal_error "compute_df c called but c not found in result")
+          in
+          let s' =
+            IntSet.filter_map
+              (fun w ->
+                if
+                  (* FIXME: In textbook this is: if n is not a dominator of w, or ...*)
+                  IntMap.find_opt w ctx.idom |> map_or_default (fun idom_w -> idom_w <> n) true
+                  || n = w
+                then Some w
+                else None)
+              df_c
+          in
+          (IntSet.union s s', ctx))
+        (IntMap.find_opt n ctx.dom_tree |> or_default IntSet.empty)
+        (IntSet.empty, ctx)
+    in
+    { ctx with dom_frontier = IntMap.add n (IntSet.union df_local df_up) ctx.dom_frontier }
+  in
+  let idom = lengauer_tarjan func ctx in
+  let dom_tree =
+    IntMap.fold
+      (fun node parent acc -> union_int_or_singleton_int_set parent node acc)
+      idom IntMap.empty
+  in
+  let ctx = { ctx with idom; dom_tree } in
+  compute_df func.func_entry_block ctx
+
+(* Algorithm 19.6, "Modern Compiler Implementation in C", Appel. *)
+let insert_phi (func : func) (ctx : build_ssa_context) : func * build_ssa_context =
+  let def_sites =
+    (* Arguments *)
+    List.fold_left
+      (fun acc (a, _) -> union_int_or_singleton_int_set a func.func_entry_block acc)
+      IntMap.empty func.func_params
+    (* for each node n *)
+    |> IntMap.fold
+         (fun n bb acc ->
+           (* for each variable a in A_orig[n] *)
+           List.fold_left
+             (fun acc instr ->
+               (* def_sites[a] <- def_sites[a] ∪ {n} *)
+               match def_id_of instr with
+               | Some a -> union_int_or_singleton_int_set a n acc
+               | None -> acc)
+             acc bb.bb_code)
+         func.func_blocks
+  in
+  let phis_to_add =
+    IntMap.fold
+      (fun a sites acc ->
+        let rec aux w added =
+          match w with
+          | [] -> added
+          | x :: rest ->
+              let df_x = IntMap.find_opt x ctx.dom_frontier |> or_default IntSet.empty in
+              let w', added' =
+                IntSet.fold
+                  (fun y (w_acc, added_acc) ->
+                    if not (IntSet.mem y added_acc) then
+                      let added_acc = IntSet.add y added_acc
+                      and w_acc = if not (IntSet.mem y sites) then y :: w_acc else w_acc in
+                      (w_acc, added_acc)
+                    else (w_acc, added_acc))
+                  df_x (rest, added)
+              in
+              aux w' added'
+        in
+        let phi_blocks = aux (IntSet.elements sites) IntSet.empty in
+        IntSet.fold (fun bb_id acc -> prepend_int_or_singleton_list bb_id a acc) phi_blocks acc)
+      def_sites IntMap.empty
+  in
+  let func_blocks =
+    IntMap.mapi
+      (fun bb_id bb ->
+        let vars = IntMap.find_opt bb_id phis_to_add |> or_default []
+        and preds = IntMap.find_opt bb_id ctx.predecessors |> or_default IntSet.empty in
+        let new_phis =
+          List.map
+            (fun var_id ->
+              {
+                phi_dest = new_value var_id;
+                phi_incoming =
+                  IntSet.to_seq preds |> Seq.map (fun p -> (p, new_value var_id)) |> IntMap.of_seq;
+              })
+            vars
+        in
+        { bb with bb_phis = bb.bb_phis @ new_phis })
+      func.func_blocks
+  in
+  ({ func with func_blocks }, ctx)
+
+type rename_value_context = {
+  counts : int IntMap.t;
+  stacks : int list IntMap.t;
+}
+
+let new_rename_value_context_with (init_vals : value list) : rename_value_context =
+  let counts = List.to_seq init_vals |> Seq.map (fun (id, _) -> (id, 0)) |> IntMap.of_seq in
+  let stacks = List.to_seq init_vals |> Seq.map (fun (id, _) -> (id, [ 0 ])) |> IntMap.of_seq in
+  { counts; stacks }
+
+let versioned_value_of_id (id : int) (rctx : rename_value_context) : value =
+  match IntMap.find_opt id rctx.stacks with
+  | Some (v :: _) -> (id, v)
+  | _ -> (id, 0)
+
+let versioned_operand (op : operand) (rctx : rename_value_context) : operand =
+  match op with
+  | Value (id, _) -> Value (versioned_value_of_id id rctx)
+  | _ -> op
+
+let look_up_value_id (id : int) (rctx : rename_value_context) : int * int list =
+  let max_v = IntMap.find_opt id rctx.counts |> or_default 0 in
+  let stack = IntMap.find_opt id rctx.stacks |> or_default [ 0 ] in
+  (max_v, stack)
+
+let bump_version_for (id : int) (rctx : rename_value_context) : int * rename_value_context =
+  let v, stack = look_up_value_id id rctx in
+  let v' = v + 1 in
+  let counts = IntMap.add id v' rctx.counts
+  and stacks = IntMap.add id (v' :: stack) rctx.stacks in
+  (v', { counts; stacks })
+
+let rewrite_instr_def_into (new_def : value) = function
+  | BinOp (_, op, s1, s2) -> BinOp (new_def, op, s1, s2)
+  | FBinOp (_, op, s1, s2) -> FBinOp (new_def, op, s1, s2)
+  | UnaryOp (_, op, s) -> UnaryOp (new_def, op, s)
+  | FUnaryOp (_, op, s) -> FUnaryOp (new_def, op, s)
+  | Move (_, s) -> Move (new_def, s)
+  | Itf (_, s) -> Itf (new_def, s)
+  | Fti (_, s) -> Fti (new_def, s)
+  | Call (_, f, args) -> Call (new_def, f, args)
+  | ArrRd (_, b, idx) -> ArrRd (new_def, b, idx)
+  | instr -> instr
+
+let rewrite_instr_uses (rctx : rename_value_context) = function
+  | BinOp (d, op, s1, s2) -> BinOp (d, op, versioned_operand s1 rctx, versioned_operand s2 rctx)
+  | FBinOp (d, op, s1, s2) -> FBinOp (d, op, versioned_operand s1 rctx, versioned_operand s2 rctx)
+  | UnaryOp (d, op, s) -> UnaryOp (d, op, versioned_operand s rctx)
+  | FUnaryOp (d, op, s) -> FUnaryOp (d, op, versioned_operand s rctx)
+  | Move (d, s) -> Move (d, versioned_operand s rctx)
+  | Itf (d, s) -> Itf (d, versioned_operand s rctx)
+  | Fti (d, s) -> Fti (d, versioned_operand s rctx)
+  | Call (d, f, args) -> Call (d, f, List.map (fun a -> versioned_operand a rctx) args)
+  | ArrRd (d, b, idx) ->
+      ArrRd (d, versioned_value_of_id (fst b) rctx, List.map (fun a -> versioned_operand a rctx) idx)
+  | ArrWr (b, idx, s) ->
+      ArrWr
+        ( versioned_value_of_id (fst b) rctx,
+          List.map (fun a -> versioned_operand a rctx) idx,
+          versioned_operand s rctx )
+
+let rewrite_terminator_uses (rctx : rename_value_context) = function
+  | Br (cond, t, f) -> Br (versioned_operand cond rctx, t, f)
+  | Return (Some op) -> Return (Some (versioned_operand op rctx))
+  | t -> t
+
+(* Algorithm 19.7, "Modern Compiler Implementation in C", Appel. *)
+let rename_value (func : func) (ctx : build_ssa_context) : func * build_ssa_context =
+  let rec rename_block n blocks rctx =
+    (* for each statement S in block n *)
+    let bb = IntMap.find n blocks in
+    (*
+      1. Phis (only care about defs)
+        for each definition of some variable a in S
+    *)
+    let bb_phis, rctx =
+      List.fold_left
+        (fun (phis, rctx) phi ->
+          let a, _ = phi.phi_dest in
+          let v', rctx = bump_version_for a rctx in
+          ({ phi with phi_dest = (a, v') } :: phis, rctx))
+        ([], rctx) bb.bb_phis
+    in
+    let bb_phis = List.rev bb_phis in
+    (*
+      2. Other instructions
+        for each use of some variable x in S
+        for each definition of some variable a in S
+    *)
+    let bb_code, rctx =
+      List.fold_left
+        (fun (code, rctx) s ->
+          let s = rewrite_instr_uses rctx s in
+          match def_id_of s with
+          | Some a ->
+              let v', rctx = bump_version_for a rctx in
+              let s = rewrite_instr_def_into (a, v') s in
+              (s :: code, rctx)
+          | None -> (s :: code, rctx))
+        ([], rctx) bb.bb_code
+    in
+    let bb_code = List.rev bb_code in
+    (*
+      3. Terminators
+        for each use of some variable x in S
+    *)
+    let bb_term = rewrite_terminator_uses rctx bb.bb_term in
+    let blocks = IntMap.add n { bb with bb_phis; bb_code; bb_term } blocks in
+    (* for each successor Y of block n *)
+    let succs = IntMap.find_opt n ctx.successors |> or_default IntSet.empty in
+    let blocks =
+      IntSet.fold
+        (fun y blks ->
+          let y_bb =
+            IntMap.find_opt y blks |> or_else (fun () -> internal_error "Successor block not found")
+          in
+          (* for each φ-function in Y *)
+          let phis' =
+            List.map
+              (fun phi ->
+                let phi_id = id_of_value phi.phi_dest in
+                let incoming = versioned_value_of_id phi_id rctx in
+                { phi with phi_incoming = IntMap.add n incoming phi.phi_incoming })
+              y_bb.bb_phis
+          in
+          IntMap.add y { y_bb with bb_phis = phis' } blks)
+        succs blocks
+    in
+    (* for each child X of n *)
+    let children = IntMap.find_opt n ctx.dom_tree |> or_default IntSet.empty in
+    (*
+      This is for fast restoration of stack changes, so this is no longer necessary:
+      > for each definition of some variable a in the original S
+      >   pop Stack[a]
+    *)
+    let stacks = rctx.stacks in
+    IntSet.fold
+      (fun x (blks, rctx) ->
+        let rctx = { rctx with stacks } in
+        rename_block x blks rctx)
+      children (blocks, rctx)
+  in
+  let rctx = new_rename_value_context_with func.func_params in
+  let blocks, _ = rename_block func.func_entry_block func.func_blocks rctx in
+  ({ func with func_blocks = blocks }, ctx)
+
+let build_ssa (program : Tac.tac_program) (ctx : build_ssa_context) : program =
+  let program, ctx = build_cfg program ctx in
+  let funcs, _ =
+    List.fold_left
+      (fun (funcs, ctx) func ->
+        let ctx = compute_dom_frontier func ctx in
+        let func, ctx = insert_phi func ctx in
+        let func, ctx = rename_value func ctx in
+        (func :: funcs, ctx))
+      ([], ctx) program.functions
+  in
+  { program with functions = List.rev funcs }

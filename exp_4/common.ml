@@ -1,5 +1,6 @@
 module StringMap = Map.Make (String)
 module IntMap = Map.Make (Int)
+module IntSet = Set.Make (Int)
 
 module AggResult = struct
   type ('a, 'b) agg_result = 'a * 'b list
@@ -28,14 +29,30 @@ let indent_seq (lines : string Seq.t) : string Seq.t = Seq.map (fun l -> "\t" ^ 
 let internal_error (msg : string) : 'a = failwith (Printf.sprintf "Internal error: %s" msg)
 let todo () : 'a = failwith "TODO: todo()"
 
-let map_or (f : 'a -> 'b) (default : 'b) (opt : 'a option) : 'b =
+let map_or_default (f : 'a -> 'b) (default : 'b) (opt : 'a option) : 'b =
   match opt with
   | Some v -> f v
   | None -> default
 
+let or_default (default : 'a) (opt : 'a option) : 'a = Option.value ~default opt
+
+let or_else (f : unit -> 'a) (opt : 'a option) : 'a =
+  match opt with
+  | Some v -> v
+  | None -> f ()
+
 let tl_or (default : 'a list) = function
   | [] -> default
   | _ :: l -> l
+
+let prepend_int_or_singleton_list (k : int) (v : 'a) (map : 'a list IntMap.t) : 'a list IntMap.t =
+  let existing = IntMap.find_opt k map |> or_default [] in
+  IntMap.add k (v :: existing) map
+
+let union_int_or_singleton_int_set (k : int) (v : int) (map : IntSet.t IntMap.t) : IntSet.t IntMap.t
+    =
+  let existing = IntMap.find_opt k map |> or_default IntSet.empty in
+  IntMap.add k (IntSet.add v existing) map
 
 let string_of_list (f : 'a -> string) (l : 'a list) : string =
   Printf.sprintf "[%s]" (List.map f l |> String.concat "; ")

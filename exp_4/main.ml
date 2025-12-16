@@ -121,6 +121,13 @@ let cfg_file (filename : string) : unit =
   let program, _ = Ssa.build_cfg program Ssa.empty_build_ssa_context in
   Ssa.prettify_program program |> print_endline
 
+let ssa_file (filename : string) : unit =
+  with_lexed filename @@ fun lexbuf ->
+  with_parsed filename lexbuf @@ fun comp_unit ->
+  with_translated filename comp_unit @@ fun (_, program) ->
+  let program = Ssa.build_ssa program Ssa.empty_build_ssa_context in
+  Ssa.prettify_program program |> print_endline
+
 let usage () : 'a =
   Printf.eprintf "usage: %s <lex|parse|type|tac> <source-file>\n" Sys.argv.(0);
   exit 1
@@ -133,6 +140,7 @@ let main () : unit =
   else if cmd = "type" then type_file Sys.argv.(2)
   else if cmd = "tac" then tac_file Sys.argv.(2)
   else if cmd = "cfg" then cfg_file Sys.argv.(2)
+  else if cmd = "ssa" then ssa_file Sys.argv.(2)
   else usage ()
 
 let () : unit =

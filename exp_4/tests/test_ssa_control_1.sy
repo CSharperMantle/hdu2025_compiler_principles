@@ -1,0 +1,11 @@
+int main() {
+    int i = 0;
+    while (i < 10) {
+        if (i % 2 == 0) {
+            i = i + 3;
+        } else {
+            i = i + 1;
+        }
+    }
+    return i;
+}
