@@ -117,7 +117,7 @@ let prettify_tac_function (f : tac_function) : string =
     List.map (fun id -> prettify_operand (Object id)) f.func_params |> String.concat ", "
   and obj_types_str =
     IntMap.mapi (fun id ty -> prettify_obj_type id ty) f.func_obj_types
-    |> IntMap.to_list |> List.map snd |> indent |> String.concat "\n"
+    |> IntMap.to_seq |> Seq.map snd |> indent_seq |> List.of_seq |> String.concat "\n"
   and body_str =
     List.map
       (fun instr ->
