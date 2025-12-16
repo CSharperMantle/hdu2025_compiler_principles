@@ -70,38 +70,18 @@ let prettify_operand = function
   | Const c -> Printf.sprintf "%d" c
   | ConstFloat f -> Printf.sprintf "%f" f
 
-let string_of_bin_op = function
-  | Ast.Add -> "Add"
-  | Ast.Sub -> "Sub"
-  | Ast.Mul -> "Mul"
-  | Ast.Div -> "Div"
-  | Ast.Mod -> "Mod"
-  | Ast.Eq -> "Eq"
-  | Ast.Neq -> "Neq"
-  | Ast.Lt -> "Lt"
-  | Ast.Leq -> "Leq"
-  | Ast.Gt -> "Gt"
-  | Ast.Geq -> "Geq"
-  | Ast.And -> "And"
-  | Ast.Or -> "Or"
-
-let string_of_unary_op = function
-  | Ast.Pos -> "Pos"
-  | Ast.Neg -> "Neg"
-  | Ast.Not -> "Not"
-
 let prettify_tac_instr = function
   | BinOp (dest, op, src1, src2) ->
-      Printf.sprintf "%s.i\t(%s, %s, %s)" (string_of_bin_op op) (prettify_operand (Object dest))
+      Printf.sprintf "%s.i\t(%s, %s, %s)" (Ast.string_of_bin_op op) (prettify_operand (Object dest))
         (prettify_operand src1) (prettify_operand src2)
   | FBinOp (dest, op, src1, src2) ->
-      Printf.sprintf "%s.f\t(%s, %s, %s)" (string_of_bin_op op) (prettify_operand (Object dest))
+      Printf.sprintf "%s.f\t(%s, %s, %s)" (Ast.string_of_bin_op op) (prettify_operand (Object dest))
         (prettify_operand src1) (prettify_operand src2)
   | UnaryOp (dest, op, src) ->
-      Printf.sprintf "%s.i\t(%s, %s)" (string_of_unary_op op) (prettify_operand (Object dest))
+      Printf.sprintf "%s.i\t(%s, %s)" (Ast.string_of_unary_op op) (prettify_operand (Object dest))
         (prettify_operand src)
   | FUnaryOp (dest, op, src) ->
-      Printf.sprintf "%s.f\t(%s, %s)" (string_of_unary_op op) (prettify_operand (Object dest))
+      Printf.sprintf "%s.f\t(%s, %s)" (Ast.string_of_unary_op op) (prettify_operand (Object dest))
         (prettify_operand src)
   | Move (dest, src) ->
       Printf.sprintf "Move\t(%s, %s)" (prettify_operand (Object dest)) (prettify_operand src)

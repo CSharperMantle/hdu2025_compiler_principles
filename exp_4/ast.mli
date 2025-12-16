@@ -10,6 +10,7 @@ type unary_op =
   | Not
 
 val prettify_unary_op : unary_op -> string
+val string_of_unary_op : unary_op -> string
 
 type bin_op =
   | Add
@@ -27,6 +28,7 @@ type bin_op =
   | Or
 
 val prettify_bin_op : bin_op -> string
+val string_of_bin_op : bin_op -> string
 
 type exp =
   | IntLit of int

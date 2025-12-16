@@ -19,6 +19,11 @@ let prettify_unary_op = function
   | Neg -> "-"
   | Not -> "!"
 
+let string_of_unary_op = function
+  | Pos -> "Pos"
+  | Neg -> "Neg"
+  | Not -> "Not"
+
 type bin_op =
   | Add
   | Sub
@@ -48,6 +53,21 @@ let prettify_bin_op = function
   | Neq -> "!="
   | And -> "&&"
   | Or -> "||"
+
+let string_of_bin_op = function
+  | Add -> "Add"
+  | Sub -> "Sub"
+  | Mul -> "Mul"
+  | Div -> "Div"
+  | Mod -> "Mod"
+  | Eq -> "Eq"
+  | Neq -> "Neq"
+  | Lt -> "Lt"
+  | Leq -> "Leq"
+  | Gt -> "Gt"
+  | Geq -> "Geq"
+  | And -> "And"
+  | Or -> "Or"
 
 type exp =
   | IntLit of int
