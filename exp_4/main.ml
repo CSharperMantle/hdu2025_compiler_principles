@@ -84,35 +84,35 @@ let with_translated (filename : string) (comp_unit : Ast.comp_unit)
       exit 1
 
 let lex_file (filename : string) : unit =
-  with_lexed filename (fun lexbuf ->
-      let tokens = Lexer.get_all_tokens lexbuf in
-      List.iter
-        (fun tok ->
-          match tok with
-          | Parser.EOF -> ()
-          | _ -> Tokens.token_to_string tok |> print_endline)
-        tokens)
+  with_lexed filename @@ fun lexbuf ->
+  let tokens = Lexer.get_all_tokens lexbuf in
+  List.iter
+    (fun tok ->
+      match tok with
+      | Parser.EOF -> ()
+      | _ -> Tokens.token_to_string tok |> print_endline)
+    tokens
 
 let parse_file (filename : string) : unit =
-  with_lexed filename (fun lexbuf ->
-      with_parsed filename lexbuf (fun comp_unit ->
-          Ast.prettify_comp_unit comp_unit
-          |> List.fold_left (fun acc l -> acc ^ l ^ "\n") ""
-          |> print_endline))
+  with_lexed filename @@ fun lexbuf ->
+  with_parsed filename lexbuf @@ fun comp_unit ->
+  Ast.prettify_comp_unit comp_unit
+  |> List.fold_left (fun acc l -> acc ^ l ^ "\n") ""
+  |> print_endline
 
 let type_file (filename : string) : unit =
-  with_lexed filename (fun lexbuf ->
-      with_parsed filename lexbuf (fun comp_unit ->
-          with_translated filename comp_unit (fun (tree, _) ->
-              Sem_ast.prettify_t_comp_unit tree
-              |> List.fold_left (fun acc l -> acc ^ l ^ "\n") ""
-              |> print_endline)))
+  with_lexed filename @@ fun lexbuf ->
+  with_parsed filename lexbuf @@ fun comp_unit ->
+  with_translated filename comp_unit @@ fun (tree, _) ->
+  Sem_ast.prettify_t_comp_unit tree
+  |> List.fold_left (fun acc l -> acc ^ l ^ "\n") ""
+  |> print_endline
 
 let tac_file (filename : string) : unit =
-  with_lexed filename (fun lexbuf ->
-      with_parsed filename lexbuf (fun comp_unit ->
-          with_translated filename comp_unit (fun (_, program) ->
-              Tac.prettify_tac_program program |> print_endline)))
+  with_lexed filename @@ fun lexbuf ->
+  with_parsed filename lexbuf @@ fun comp_unit ->
+  with_translated filename comp_unit @@ fun (_, program) ->
+  Tac.prettify_tac_program program |> print_endline
 
 let usage () : 'a =
   Printf.eprintf "usage: %s <lex|parse|type|tac> <source-file>\n" Sys.argv.(0);
