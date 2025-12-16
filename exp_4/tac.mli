@@ -32,8 +32,8 @@ type tac_instr =
   | Jc of operand * int (* jc %0, .L%1 *)
   | Call of int * int * operand list (* %0 <- call %1, ...%2 *)
   | Return of operand option (* ret %0 *)
-  | ArrRd of int * int * operand (* %0 <- %1[%2] TODO: Stride *)
-  | ArrWr of int * operand * operand (* %0[%1] <- %2 TODO: Stride *)
+  | ArrRd of int * int * operand * operand list (* %0 <- %1[%2] aka %1[...%3] *)
+  | ArrWr of int * operand * operand * operand list (* %0[%1] aka %1[...%3] <- %2 *)
 
 type tac_function = {
   func_id : int;

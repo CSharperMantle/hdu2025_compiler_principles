@@ -264,8 +264,16 @@ let eval_binary_op (lv : int) (rv : int) = function
   | Ast.Or -> Some (Bool.to_int (lv <> 0 || rv <> 0))
   | _ -> None
 
+(*
+  Calculates index for multi-dim array indexing.
+
+  Returns:
+    * Linear index operand
+    * Components operand
+    * New context
+*)
 let rec gen_opnd_index (indices : t_exp list) (dims : int list) (ctx : translation_context) :
-    Tac.operand * translation_context =
+    Tac.operand * Tac.operand list * translation_context =
   let idx_exp =
     Seq.zip (List.to_seq indices) (List.to_seq dims)
     |> Seq.fold_left
@@ -278,8 +286,16 @@ let rec gen_opnd_index (indices : t_exp list) (dims : int list) (ctx : translati
                TBinary (Ast.Add, mul, i, int_type))
          (TIntLit 0)
   in
+  let comps_rev, ctx =
+    List.to_seq indices
+    |> Seq.fold_left
+         (fun (comps, ctx) i ->
+           let opnd, _, ctx = gen_exp i ctx in
+           (opnd :: comps, ctx))
+         ([], ctx)
+  in
   let opnd, _, ctx = gen_exp idx_exp ctx in
-  (opnd, ctx)
+  (opnd, List.rev comps_rev, ctx)
 
 and gen_exp (exp : t_exp) (ctx : translation_context) : Tac.operand * sem_type * translation_context
     =
@@ -290,9 +306,9 @@ and gen_exp (exp : t_exp) (ctx : translation_context) : Tac.operand * sem_type *
       (Tac.Object id, ty, ctx)
   | TVar (id, _, indices, ty) ->
       let dims = (find_obj_type id ctx).dims in
-      let opnd_index, ctx = gen_opnd_index indices dims ctx in
+      let opnd_index, components, ctx = gen_opnd_index indices dims ctx in
       let temp, ctx = alloc_temp_obj ty ctx in
-      let rd = Tac.ArrRd (temp, id, opnd_index) in
+      let rd = Tac.ArrRd (temp, id, opnd_index, components) in
       (Tac.Object temp, ty, ctx |> emit rd)
   | TUnary (op, e, res_ty) ->
       let opnd, sub_ty, ctx = gen_exp e ctx in
@@ -347,8 +363,8 @@ let rec gen_stmt (s : t_stmt) (ctx : translation_context) : translation_context 
       let lhs_ty = find_obj_type id ctx in
       let rhs_opnd, rhs_ty, ctx = gen_exp rhs ctx in
       let rhs_opnd, ctx = coerce_type rhs_opnd lhs_ty.elem_ty rhs_ty.elem_ty ctx in
-      let opnd_index, ctx = gen_opnd_index indices lhs_ty.dims ctx in
-      let wr = Tac.ArrWr (id, opnd_index, rhs_opnd) in
+      let opnd_index, components, ctx = gen_opnd_index indices lhs_ty.dims ctx in
+      let wr = Tac.ArrWr (id, opnd_index, rhs_opnd, components) in
       ctx |> emit wr
   | TExprStmt (Some e) ->
       let _, _, ctx = gen_exp e ctx in

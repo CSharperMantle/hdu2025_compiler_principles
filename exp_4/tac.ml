@@ -46,8 +46,8 @@ type tac_instr =
   | Jc of operand * int
   | Call of int * int * operand list
   | Return of operand option
-  | ArrRd of int * int * operand
-  | ArrWr of int * operand * operand
+  | ArrRd of int * int * operand * operand list
+  | ArrWr of int * operand * operand * operand list
 
 type tac_function = {
   func_id : int;
@@ -120,12 +120,14 @@ let prettify_tac_instr = function
           Printf.sprintf "Call\t(%s, $%d, %s)" (prettify_operand (Object dest)) func_id args_str)
   | Return (Some op) -> Printf.sprintf "Ret\t(%s)" (prettify_operand op)
   | Return None -> "Ret\t()"
-  | ArrRd (dest, base, offset) ->
-      Printf.sprintf "ArrRd\t(%s, %s, %s)" (prettify_operand (Object dest))
-        (prettify_operand (Object base)) (prettify_operand offset)
-  | ArrWr (base, offset, src) ->
-      Printf.sprintf "ArrWr\t(%s, %s, %s)" (prettify_operand (Object base))
-        (prettify_operand offset) (prettify_operand src)
+  | ArrRd (dest, base, offset, indices) ->
+      let indices_str = List.map prettify_operand indices |> String.concat "][" in
+      Printf.sprintf "ArrRd\t(%s, %s, %s)\t[%s]" (prettify_operand (Object dest))
+        (prettify_operand (Object base)) (prettify_operand offset) indices_str
+  | ArrWr (base, offset, src, indices) ->
+      let indices_str = List.map prettify_operand indices |> String.concat "][" in
+      Printf.sprintf "ArrWr\t(%s, %s, %s)\t[%s]" (prettify_operand (Object base))
+        (prettify_operand offset) (prettify_operand src) indices_str
 
 let prettify_obj_type (id : int) (ty : tac_obj_type) =
   Printf.sprintf "%s: %s" (prettify_operand (Object id)) (prettify_tac_obj_type ty)
