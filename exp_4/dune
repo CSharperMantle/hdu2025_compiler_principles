@@ -24,7 +24,8 @@
     parser
     sem_ast
     tac
-    semant)
+    semant
+    ssa)
   (flags (:standard
     -warn-error -27
     -warn-error -26

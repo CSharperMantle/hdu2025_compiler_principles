@@ -10,6 +10,8 @@ type tac_elem_type =
   | Float
   | Void
 
+val string_of_tac_elem_type : tac_elem_type -> string
+
 type tac_obj_type = {
   elem_ty : tac_elem_type;
   is_array : bool;
@@ -18,6 +20,8 @@ type tac_obj_type = {
 type tac_init =
   | InitInt of int
   | InitList of tac_init list
+
+val prettify_tac_init : tac_init -> string
 
 type tac_instr =
   | BinOp of int * Ast.bin_op * operand * operand (* %0 <- %1 %op.i %2 *)
