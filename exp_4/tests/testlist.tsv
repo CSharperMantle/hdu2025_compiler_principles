@@ -27,3 +27,4 @@ tac	tests/test_tac_scopes_2.sy	success
 tac	tests/test_tac_conversions_1.sy	success		
 tac	tests/test_parser_array_1.sy	success		
 tac	tests/test_parser_array_2.sy	success		
+tac	tests/program_quicksort.sy	success		

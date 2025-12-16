@@ -425,19 +425,28 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
         if i_attr.ty.elem_ty <> IntType || i_attr.ty.dims <> [] then
           agg_error "Array index must be an integer scalar" (result, ctx)
         else agg_ok (result, ctx)
-  and translate_args args pms ctx =
-    match (args, pms) with
+  and translate_args args param_tys ctx =
+    match (args, param_tys) with
     | [], [] -> agg_ok ([], ctx)
     | a :: a_rest, p_ty :: p_rest ->
         let* a_expr, a_attr, ctx = translate_exp a ctx in
         let* rest_exprs, ctx = translate_args a_rest p_rest ctx in
         let current_exprs = a_expr :: rest_exprs in
+        let dims_match =
+          match (a_attr.ty.dims, p_ty.dims) with
+          | [], [] -> true
+          | _ :: a_rest, 0 :: p_rest -> a_rest = p_rest
+          | _ -> a_attr.ty.dims = p_ty.dims
+        in
 
-        if a_attr.ty.dims <> p_ty.dims then
-          agg_error "Argument dimension mismatch" (current_exprs, ctx)
+        if not dims_match then
+          agg_error
+            (Printf.sprintf "Argument dimension mismatch: %s vs %s"
+               (string_of_int_list a_attr.ty.dims)
+               (string_of_int_list p_ty.dims))
+            (current_exprs, ctx)
         else if
-          a_attr.ty.elem_ty <> p_ty.elem_ty
-          && not (a_attr.ty.elem_ty = IntType && p_ty.elem_ty = FloatType)
+          a_attr.ty.elem_ty <> p_ty.elem_ty && not (can_coerce_type p_ty.elem_ty a_attr.ty.elem_ty)
         then agg_error "Argument type mismatch" (current_exprs, ctx)
         else agg_ok (current_exprs, ctx)
     | _ -> agg_error "Argument count mismatch" ([], ctx)

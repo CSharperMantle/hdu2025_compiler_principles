@@ -26,6 +26,7 @@ let indent_single (line : string) : string = "\t" ^ line
 let indent (lines : string list) : string list = List.map (fun l -> "\t" ^ l) lines
 let indent_seq (lines : string Seq.t) : string Seq.t = Seq.map (fun l -> "\t" ^ l) lines
 let internal_error (msg : string) : 'a = failwith (Printf.sprintf "Internal error: %s" msg)
+let todo () : 'a = failwith "TODO: todo()"
 
 let map_or (f : 'a -> 'b) (default : 'b) (opt : 'a option) : 'b =
   match opt with
@@ -35,3 +36,8 @@ let map_or (f : 'a -> 'b) (default : 'b) (opt : 'a option) : 'b =
 let tl_or (default : 'a list) = function
   | [] -> default
   | _ :: l -> l
+
+let string_of_list (f : 'a -> string) (l : 'a list) : string =
+  Printf.sprintf "[%s]" (List.map f l |> String.concat "; ")
+
+let string_of_int_list (l : int list) : string = string_of_list string_of_int l
