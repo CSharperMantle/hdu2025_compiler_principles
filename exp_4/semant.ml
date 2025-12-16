@@ -941,15 +941,16 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
     let ctx = enter_global ctx in
     let* comp_unit, ctx = translate_comp_unit_item_list comp_unit ctx in
     let globals =
-      IntMap.bindings ctx.obj_kinds
-      |> List.filter_map (fun (id, kind) -> if kind = Global then Some id else None)
+      IntMap.to_seq ctx.obj_kinds
+      |> Seq.filter_map (fun (id, kind) -> if kind = Global then Some id else None)
+      |> List.of_seq
     in
     let objects =
-      IntMap.bindings ctx.obj_tys
-      |> List.map (fun (id, ty) ->
+      IntMap.to_seq ctx.obj_tys
+      |> Seq.map (fun (id, ty) ->
           let elem_ty = tac_elem_type_of ty.elem_ty in
           (id, { Tac.elem_ty; is_array = ty.dims <> [] }))
-      |> List.to_seq |> IntMap.of_seq
+      |> IntMap.of_seq
     in
     let program =
       { Tac.globals; global_init = ctx.global_inits; functions = List.rev ctx.functions; objects }
