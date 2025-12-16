@@ -570,107 +570,115 @@ let rec expand_array_init_zeros (dims : int list) : (int list * t_exp) list =
       in
       aux (d - 1) []
 
+let rec eval_const_dim (e : Ast.exp) (ctx : translation_context) :
+    (int * t_exp * translation_context, string) agg_result =
+  let* t_e, attr, ctx = translate_exp e ctx in
+
+  match attr.const_val with
+  | Some v -> agg_ok (v, t_e, ctx)
+  | None -> agg_error "Array dimension must be a constant integer" (1, t_e, ctx)
+
+and eval_dims (dims : Ast.exp list) (acc_vals : int list) (acc_exprs : t_exp list)
+    (ctx : translation_context) : (int list * t_exp list * translation_context, string) agg_result =
+  match dims with
+  | [] -> agg_ok (List.rev acc_vals, List.rev acc_exprs, ctx)
+  | h :: t ->
+      let* v, t_e, ctx = eval_const_dim h ctx in
+      eval_dims t (v :: acc_vals) (t_e :: acc_exprs) ctx
+
+let rec translate_const_init (init : Ast.const_init_val) (ctx : translation_context) :
+    (t_const_init_val * Tac.tac_init * translation_context, string) agg_result =
+  match init with
+  | Ast.ConstExp e ->
+      let* t_e, attr, ctx = translate_exp e ctx in
+
+      if attr.const_val = None then
+        agg_error "Constant initializer must be constant" (TConstExp t_e, Tac.InitInt 0, ctx)
+      else agg_ok (TConstExp t_e, Tac.InitInt (Option.get attr.const_val), ctx)
+  | Ast.ConstArray vals ->
+      let rec visit_vals vs ctx =
+        match vs with
+        | [] -> agg_ok ([], [], ctx)
+        | v :: rest ->
+            let* t_v, init_v, ctx = translate_const_init v ctx in
+            let* t_rest, init_rest, ctx = visit_vals rest ctx in
+            agg_ok (t_v :: t_rest, init_v :: init_rest, ctx)
+      in
+      let* t_vals, init_vals, ctx = visit_vals vals ctx in
+      agg_ok (TConstArray t_vals, Tac.InitList init_vals, ctx)
+
+let rec translate_init (init : Ast.init_val) (ctx : translation_context) :
+    (t_init_val * Tac.tac_init option * translation_context, string) agg_result =
+  match init with
+  | Ast.InitExp e ->
+      let* t_e, attr, ctx = translate_exp e ctx in
+      let init_val = Option.map (fun v -> Tac.InitInt v) attr.const_val in
+      agg_ok (TInitExp t_e, init_val, ctx)
+  | Ast.InitArray vals ->
+      let rec visit_vals vs ctx =
+        match vs with
+        | [] -> agg_ok ([], Some [], ctx)
+        | v :: rest ->
+            let* t_v, init_v, ctx = translate_init v ctx in
+            let* t_rest, init_rest, ctx = visit_vals rest ctx in
+            let combined_init =
+              match (init_v, init_rest) with
+              | Some v, Some rest -> Some (v :: rest)
+              | _ -> None
+            in
+            agg_ok (t_v :: t_rest, combined_init, ctx)
+      in
+      let* t_vals, init_vals, ctx = visit_vals vals ctx in
+      let init_val = Option.map (fun v -> Tac.InitList v) init_vals in
+      agg_ok (TInitArray t_vals, init_val, ctx)
+
+let rec expand_array_init (dims : int list) (init : t_init_val) (ctx : translation_context) :
+    ((int list * t_exp) list * translation_context, string) agg_result =
+  match (dims, init) with
+  | [], TInitExp e -> agg_ok ([ ([], e) ], ctx)
+  | d :: rest_dims, TInitArray vals ->
+      let rec aux i vals_ptr acc ctx =
+        if i >= d then agg_ok (List.rev acc, ctx)
+        else
+          let* sub_inits, ctx =
+            match vals_ptr with
+            | [] -> agg_ok (expand_array_init_zeros rest_dims, ctx)
+            | v :: _ -> expand_array_init rest_dims v ctx
+          in
+          let shifted = List.map (fun (idxs, e) -> (i :: idxs, e)) sub_inits in
+          let next_vals = tl_or [] vals_ptr in
+          aux (i + 1) next_vals (List.rev_append shifted acc) ctx
+      in
+      if List.length vals > d then agg_error "Too many initializers" ([], ctx)
+      else aux 0 vals [] ctx
+  | [], TInitArray _ -> agg_error "Initializer is an array but scalar expected" ([], ctx)
+  | _ :: _, TInitExp _ -> agg_error "Initializer is a scalar but array expected" ([], ctx)
+
+let rec expand_const_array_init (dims : int list) (init : t_const_init_val)
+    (ctx : translation_context) : ((int list * t_exp) list * translation_context, string) agg_result
+    =
+  match (dims, init) with
+  | [], TConstExp e -> agg_ok ([ ([], e) ], ctx)
+  | d :: rest_dims, TConstArray vals ->
+      let rec aux i vals_ptr acc ctx =
+        if i >= d then agg_ok (List.rev acc, ctx)
+        else
+          let* sub_inits, ctx =
+            match vals_ptr with
+            | [] -> agg_ok (expand_array_init_zeros rest_dims, ctx)
+            | v :: _ -> expand_const_array_init rest_dims v ctx
+          in
+          let shifted = List.map (fun (idxs, e) -> (i :: idxs, e)) sub_inits in
+          let next_vals = tl_or [] vals_ptr in
+          aux (i + 1) next_vals (List.rev_append shifted acc) ctx
+      in
+      if List.length vals > d then agg_error "Too many initializers" ([], ctx)
+      else aux 0 vals [] ctx
+  | [], TConstArray _ -> agg_error "Initializer is an array but scalar expected" ([], ctx)
+  | _ :: _, TConstExp _ -> agg_error "Initializer is a scalar but array expected" ([], ctx)
+
 let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
     (t_comp_unit * Tac.tac_program, string list) result =
-  let eval_const_dim e ctx =
-    let* t_e, attr, ctx = translate_exp e ctx in
-
-    match attr.const_val with
-    | Some v -> agg_ok (v, t_e, ctx)
-    | None -> agg_error "Array dimension must be a constant integer" (1, t_e, ctx)
-  in
-  let rec eval_dims dims acc_vals acc_exprs ctx =
-    match dims with
-    | [] -> agg_ok (List.rev acc_vals, List.rev acc_exprs, ctx)
-    | h :: t ->
-        let* v, t_e, ctx = eval_const_dim h ctx in
-        eval_dims t (v :: acc_vals) (t_e :: acc_exprs) ctx
-  in
-  let rec translate_const_init init ctx =
-    match init with
-    | Ast.ConstExp e ->
-        let* t_e, attr, ctx = translate_exp e ctx in
-
-        if attr.const_val = None then
-          agg_error "Constant initializer must be constant" (TConstExp t_e, Tac.InitInt 0, ctx)
-        else agg_ok (TConstExp t_e, Tac.InitInt (Option.get attr.const_val), ctx)
-    | Ast.ConstArray vals ->
-        let rec visit_vals vs ctx =
-          match vs with
-          | [] -> agg_ok ([], [], ctx)
-          | v :: rest ->
-              let* t_v, init_v, ctx = translate_const_init v ctx in
-              let* t_rest, init_rest, ctx = visit_vals rest ctx in
-              agg_ok (t_v :: t_rest, init_v :: init_rest, ctx)
-        in
-        let* t_vals, init_vals, ctx = visit_vals vals ctx in
-        agg_ok (TConstArray t_vals, Tac.InitList init_vals, ctx)
-  in
-  let rec translate_init init ctx =
-    match init with
-    | Ast.InitExp e ->
-        let* t_e, attr, ctx = translate_exp e ctx in
-        let init_val = Option.map (fun v -> Tac.InitInt v) attr.const_val in
-        agg_ok (TInitExp t_e, init_val, ctx)
-    | Ast.InitArray vals ->
-        let rec visit_vals vs ctx =
-          match vs with
-          | [] -> agg_ok ([], Some [], ctx)
-          | v :: rest ->
-              let* t_v, init_v, ctx = translate_init v ctx in
-              let* t_rest, init_rest, ctx = visit_vals rest ctx in
-              let combined_init =
-                match (init_v, init_rest) with
-                | Some v, Some rest -> Some (v :: rest)
-                | _ -> None
-              in
-              agg_ok (t_v :: t_rest, combined_init, ctx)
-        in
-        let* t_vals, init_vals, ctx = visit_vals vals ctx in
-        let init_val = Option.map (fun v -> Tac.InitList v) init_vals in
-        agg_ok (TInitArray t_vals, init_val, ctx)
-  in
-  let rec expand_array_init dims init ctx =
-    match (dims, init) with
-    | [], TInitExp e -> agg_ok ([ ([], e) ], ctx)
-    | d :: rest_dims, TInitArray vals ->
-        let rec aux i vals_ptr acc ctx =
-          if i >= d then agg_ok (List.rev acc, ctx)
-          else
-            let* sub_inits, ctx =
-              match vals_ptr with
-              | [] -> agg_ok (expand_array_init_zeros rest_dims, ctx)
-              | v :: _ -> expand_array_init rest_dims v ctx
-            in
-            let shifted = List.map (fun (idxs, e) -> (i :: idxs, e)) sub_inits in
-            let next_vals = tl_or [] vals_ptr in
-            aux (i + 1) next_vals (List.rev_append shifted acc) ctx
-        in
-        if List.length vals > d then agg_error "Too many initializers" ([], ctx)
-        else aux 0 vals [] ctx
-    | [], TInitArray _ -> agg_error "Initializer is an array but scalar expected" ([], ctx)
-    | _ :: _, TInitExp _ -> agg_error "Initializer is a scalar but array expected" ([], ctx)
-  and expand_const_array_init dims init ctx =
-    match (dims, init) with
-    | [], TConstExp e -> agg_ok ([ ([], e) ], ctx)
-    | d :: rest_dims, TConstArray vals ->
-        let rec aux i vals_ptr acc ctx =
-          if i >= d then agg_ok (List.rev acc, ctx)
-          else
-            let* sub_inits, ctx =
-              match vals_ptr with
-              | [] -> agg_ok (expand_array_init_zeros rest_dims, ctx)
-              | v :: _ -> expand_const_array_init rest_dims v ctx
-            in
-            let shifted = List.map (fun (idxs, e) -> (i :: idxs, e)) sub_inits in
-            let next_vals = tl_or [] vals_ptr in
-            aux (i + 1) next_vals (List.rev_append shifted acc) ctx
-        in
-        if List.length vals > d then agg_error "Too many initializers" ([], ctx)
-        else aux 0 vals [] ctx
-    | [], TConstArray _ -> agg_error "Initializer is an array but scalar expected" ([], ctx)
-    | _ :: _, TConstExp _ -> agg_error "Initializer is a scalar but array expected" ([], ctx)
-  in
   let rec add_const_defs defs ty acc_defs acc_stmts ctx =
     match defs with
     | [] -> agg_ok (List.rev acc_defs, List.rev acc_stmts, ctx)
