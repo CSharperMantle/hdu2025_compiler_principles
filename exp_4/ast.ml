@@ -155,10 +155,10 @@ let rec prettify_exp (node : exp) : string list =
 
 let rec prettify_const_init_val (node : const_init_val) : string list =
   match node with
-  | ConstExp e -> "ConstInitVal" :: indent (prettify_exp e)
+  | ConstExp e -> "ConstExp" :: indent (prettify_exp e)
   | ConstArray vals ->
       let vals_lines = List.map prettify_const_init_val vals |> List.flatten in
-      "ConstInitVal" :: indent vals_lines
+      "ConstArray" :: indent vals_lines
 
 let prettify_const_def (node : const_def) : string list =
   let dims_lines = List.map prettify_exp node.const_dims |> List.flatten in
@@ -173,10 +173,10 @@ let prettify_const_decl (t : b_type) (defs : const_def list) : string list =
 
 let rec prettify_init_val (node : init_val) : string list =
   match node with
-  | InitExp e -> "InitVal" :: indent (prettify_exp e)
+  | InitExp e -> "InitExp" :: indent (prettify_exp e)
   | InitArray vals ->
       let vals_lines = List.map prettify_init_val vals |> List.flatten in
-      "InitVal" :: indent vals_lines
+      "InitArray" :: indent vals_lines
 
 let prettify_var_def (node : var_def) : string list =
   let dims_lines = List.map prettify_exp node.var_dims |> List.flatten in

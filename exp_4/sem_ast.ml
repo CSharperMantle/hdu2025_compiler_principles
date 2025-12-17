@@ -60,6 +60,7 @@ and t_stmt =
   | TBreak
   | TContinue
   | TReturn of t_exp option
+  | TAlloca of int * string * int
 
 and t_block_item =
   | TDecl of t_decl
@@ -118,10 +119,10 @@ let rec prettify_t_exp (node : t_exp) : string list =
       Printf.sprintf "TLVal %s" (prettify_sem_type ty)
       :: (prettify_id_name (id, name) :: indices_lines |> indent)
   | TUnary (op, e, ty) ->
-      Printf.sprintf "TUnaryExp op='%s' %s" (Ast.prettify_unary_op op) (prettify_sem_type ty)
+      Printf.sprintf "TUnary op='%s' %s" (Ast.prettify_unary_op op) (prettify_sem_type ty)
       :: (prettify_t_exp e |> indent)
   | TBinary (op, e1, e2, ty) ->
-      Printf.sprintf "TBinaryExp op='%s' %s" (Ast.prettify_bin_op op) (prettify_sem_type ty)
+      Printf.sprintf "TBinary op='%s' %s" (Ast.prettify_bin_op op) (prettify_sem_type ty)
       :: (prettify_t_exp e1 @ prettify_t_exp e2 |> indent)
   | TCall (id, name, args, ty) ->
       let args_lines = List.map prettify_t_exp args |> List.flatten in
@@ -130,10 +131,10 @@ let rec prettify_t_exp (node : t_exp) : string list =
 
 let rec prettify_t_const_init_val (node : t_const_init_val) : string list =
   match node with
-  | TConstExp e -> "TConstInitVal" :: indent (prettify_t_exp e)
+  | TConstExp e -> "TConstExp" :: indent (prettify_t_exp e)
   | TConstArray vals ->
       let vals_lines = List.map prettify_t_const_init_val vals |> List.flatten in
-      "TConstInitVal" :: indent vals_lines
+      "TConstArray" :: indent vals_lines
 
 let prettify_t_const_def (node : t_const_def) : string list =
   let dims_lines = List.map prettify_t_exp node.t_const_dims |> List.flatten in
@@ -149,10 +150,10 @@ let prettify_t_const_decl (t : b_type) (defs : t_const_def list) : string list =
 
 let rec prettify_t_init_val (node : t_init_val) : string list =
   match node with
-  | TInitExp e -> "TInitVal" :: (prettify_t_exp e |> indent)
+  | TInitExp e -> "TInitExp" :: (prettify_t_exp e |> indent)
   | TInitArray vals ->
       let vals_lines = List.map prettify_t_init_val vals |> List.flatten in
-      "TInitVal" :: indent vals_lines
+      "TInitArray" :: indent vals_lines
 
 let prettify_t_var_def (node : t_var_def) : string list =
   let dims_lines = List.map prettify_t_exp node.t_var_dims |> List.flatten in
@@ -212,6 +213,8 @@ let rec prettify_t_stmt (node : t_stmt) : string list =
   | TContinue -> [ "TContinue" ]
   | TReturn (Some e) -> "TReturn" :: (prettify_t_exp e |> indent)
   | TReturn None -> [ "TReturn" ]
+  | TAlloca (id, name, size) ->
+      "TAlloca" :: [ prettify_id_name (id, name); string_of_int size ] |> indent
 
 and prettify_t_block_item (node : t_block_item) : string list =
   match node with

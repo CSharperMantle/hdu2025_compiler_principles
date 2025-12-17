@@ -12,6 +12,11 @@ type phi = {
   phi_incoming : value IntMap.t;
 }
 
+type mem_loc =
+  | LocalArray of value
+  | GlobalScalar of int
+  | GlobalArray of int
+
 type instr =
   | BinOp of value * Ast.bin_op * operand * operand
   | FBinOp of value * Ast.bin_op * operand * operand
@@ -21,8 +26,9 @@ type instr =
   | Itf of value * operand
   | Fti of value * operand
   | Call of value * int * operand list
-  | ArrRd of value * value * operand list
-  | ArrWr of value * operand list * operand
+  | Alloca of value * int
+  | Load of value * mem_loc * operand list
+  | Store of mem_loc * operand list * operand
 
 type terminator =
   | Jump of int

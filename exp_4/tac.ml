@@ -15,6 +15,16 @@ let string_of_tac_elem_type = function
   | Float -> "float"
   | Void -> "void"
 
+type mem_loc =
+  | LocalScalar of int
+  | LocalArray of int
+  | GlobalScalar of int
+  | GlobalArray of int
+
+let prettify_mem_loc = function
+  | LocalScalar id | LocalArray id -> Printf.sprintf "%%%d" id
+  | GlobalScalar id | GlobalArray id -> Printf.sprintf "@%d" id
+
 type tac_obj_type = {
   elem_ty : tac_elem_type;
   is_array : bool;
@@ -46,8 +56,9 @@ type tac_instr =
   | Br of operand * int
   | Call of int * int * operand list
   | Return of operand option
-  | ArrRd of int * int * operand * operand list
-  | ArrWr of int * operand * operand * operand list
+  | Alloca of int * int
+  | Load of int * mem_loc * operand * operand list
+  | Store of mem_loc * operand * operand * operand list
 
 type tac_function = {
   func_id : int;
@@ -100,14 +111,23 @@ let prettify_tac_instr = function
           Printf.sprintf "Call\t(%s, $%d, [%s])" (prettify_operand (Object dest)) func_id args_str)
   | Return (Some op) -> Printf.sprintf "Ret\t(%s)" (prettify_operand op)
   | Return None -> "Ret\t()"
-  | ArrRd (dest, base, offset, indices) ->
-      let indices_str = List.map prettify_operand indices |> String.concat "][" in
-      Printf.sprintf "ArrRd\t(%s, %s, %s)\t[%s]" (prettify_operand (Object dest))
-        (prettify_operand (Object base)) (prettify_operand offset) indices_str
-  | ArrWr (base, offset, src, indices) ->
-      let indices_str = List.map prettify_operand indices |> String.concat "][" in
-      Printf.sprintf "ArrWr\t(%s, %s, %s)\t[%s]" (prettify_operand (Object base))
-        (prettify_operand offset) (prettify_operand src) indices_str
+  | Alloca (dest, count) -> Printf.sprintf "Alloca\t(%s, %d)" (prettify_operand (Object dest)) count
+  | Load (dest, mem, offset, indices) ->
+      let mem_str = prettify_mem_loc mem in
+      let idx_str = List.map prettify_operand indices |> String.concat "][" in
+      if indices = [] then
+        Printf.sprintf "Load\t(%s, %s, %s)" (prettify_operand (Object dest)) mem_str
+          (prettify_operand offset)
+      else
+        Printf.sprintf "Load\t(%s, %s, %s)\t[%s]" (prettify_operand (Object dest)) mem_str
+          (prettify_operand offset) idx_str
+  | Store (mem, offset, src, indices) ->
+      let mem_str = prettify_mem_loc mem in
+      let idx_str = List.map prettify_operand indices |> String.concat "][" in
+      if indices = [] then Printf.sprintf "Store\t(%s, %s)" mem_str (prettify_operand src)
+      else
+        Printf.sprintf "Store\t(%s, %s, %s)\t[%s]" mem_str (prettify_operand offset)
+          (prettify_operand src) idx_str
 
 let prettify_obj_type (id : int) (ty : tac_obj_type) =
   Printf.sprintf "%s: %s" (prettify_operand (Object id)) (prettify_tac_obj_type ty)
@@ -135,7 +155,7 @@ let prettify_tac_program (p : tac_program) : string =
   let globals_str =
     List.map
       (fun id ->
-        let decl = Printf.sprintf ".global\t%s" (prettify_operand (Object id)) in
+        let decl = Printf.sprintf ".global\t@%d" id in
         match IntMap.find_opt id p.global_init with
         | Some init -> Printf.sprintf "%s, %s" decl (prettify_tac_init init)
         | None -> decl)

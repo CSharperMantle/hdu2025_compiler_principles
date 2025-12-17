@@ -12,6 +12,14 @@ type tac_elem_type =
 
 val string_of_tac_elem_type : tac_elem_type -> string
 
+type mem_loc =
+  | LocalScalar of int
+  | LocalArray of int
+  | GlobalScalar of int
+  | GlobalArray of int
+
+val prettify_mem_loc : mem_loc -> string
+
 type tac_obj_type = {
   elem_ty : tac_elem_type;
   is_array : bool;
@@ -36,8 +44,9 @@ type tac_instr =
   | Br of operand * int (* br %0, .L%1 *)
   | Call of int * int * operand list (* %0 <- call %1, ...%2 *)
   | Return of operand option (* ret %0 *)
-  | ArrRd of int * int * operand * operand list (* %0 <- %1[%2] aka %1[...%3] *)
-  | ArrWr of int * operand * operand * operand list (* %0[%1] aka %1[...%3] <- %2 *)
+  | Alloca of int * int (* %0 <- alloca(%1) *)
+  | Load of int * mem_loc * operand * operand list (* %0 <- @1[%2] aka @1[...%3] *)
+  | Store of mem_loc * operand * operand * operand list (* @0[%1] aka @0[...%3] <- %2) *)
 
 type tac_function = {
   func_id : int;

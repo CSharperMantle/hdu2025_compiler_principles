@@ -61,6 +61,7 @@ and t_stmt =
   | TBreak
   | TContinue
   | TReturn of t_exp option
+  | TAlloca of int * string * int (* Automatic storage allocation *)
 
 (* Typed counterpart of Ast.block_item. *)
 and t_block_item =

@@ -160,6 +160,26 @@ let alloc_named_obj (name : string) (ty : sem_type) (kind : obj_kind) (const_val
       obj_tys = IntMap.add id ty ctx.obj_tys;
     } )
 
+let mem_loc_of_id (id : int) (ctx : translation_context) : Tac.mem_loc =
+  let is_array =
+    (IntMap.find_opt id ctx.obj_tys
+    |> or_else (fun () -> internal_error "Object not found in obj_tys"))
+      .dims <> []
+  and kind =
+    IntMap.find_opt id ctx.obj_kinds
+    |> or_else (fun () -> internal_error "Object not found in obj_kinds")
+  in
+  match (is_array, kind) with
+  | false, Global -> GlobalScalar id
+  | false, _ -> LocalScalar id
+  | true, Global -> GlobalArray id
+  | true, _ -> LocalArray id
+
+let is_mem_loc (id : int) (ctx : translation_context) : bool =
+  match mem_loc_of_id id ctx with
+  | LocalScalar _ | LocalArray _ -> false
+  | _ -> true
+
 let alloc_func (name : string) (args : sem_type list) (ret : b_type) (ctx : translation_context) :
     int * translation_context =
   let id, ctx = alloc_func_id ctx in
@@ -301,14 +321,19 @@ and gen_exp (exp : t_exp) (ctx : translation_context) : Tac.operand * sem_type *
     =
   match exp with
   | TIntLit n -> (Tac.Const n, int_type, ctx)
-  | TVar (id, _, [], _) ->
-      let ty = find_obj_type id ctx in
-      (Tac.Object id, ty, ctx)
+  | TVar (id, _, [], ty) ->
+      if is_mem_loc id ctx then
+        let temp, ctx = alloc_temp_obj ty ctx in
+        let mem = mem_loc_of_id id ctx in
+        let load = Tac.Load (temp, mem, Tac.Const 0, []) in
+        (Tac.Object temp, ty, ctx |> emit load)
+      else (Tac.Object id, ty, ctx)
   | TVar (id, _, indices, ty) ->
       let dims = (find_obj_type id ctx).dims in
       let opnd_index, components, ctx = gen_opnd_index indices dims ctx in
       let temp, ctx = alloc_temp_obj ty ctx in
-      let rd = Tac.ArrRd (temp, id, opnd_index, components) in
+      let mem = mem_loc_of_id id ctx in
+      let rd = Tac.Load (temp, mem, opnd_index, components) in
       (Tac.Object temp, ty, ctx |> emit rd)
   | TUnary (op, e, res_ty) ->
       let opnd, sub_ty, ctx = gen_exp e ctx in
@@ -357,14 +382,22 @@ let rec gen_stmt (s : t_stmt) (ctx : translation_context) : translation_context 
       let rhs_opnd, rhs_ty, ctx = gen_exp rhs ctx in
       let lhs_ty = find_obj_type id ctx in
       let rhs_opnd, ctx = coerce_type rhs_opnd lhs_ty.elem_ty rhs_ty.elem_ty ctx in
-      let instr = Tac.Move (id, rhs_opnd) in
-      { ctx with current_ir = instr :: ctx.current_ir }
+      if is_mem_loc id ctx then
+        let mem = mem_loc_of_id id ctx in
+        let temp, ctx = alloc_temp_obj lhs_ty ctx in
+        let mv = Tac.Move (temp, rhs_opnd)
+        and st = Tac.Store (mem, Tac.Const 0, Tac.Object temp, []) in
+        ctx |> emit mv |> emit st
+      else
+        let mv = Tac.Move (id, rhs_opnd) in
+        ctx |> emit mv
   | TAssign (id, _, indices, rhs) ->
       let lhs_ty = find_obj_type id ctx in
       let rhs_opnd, rhs_ty, ctx = gen_exp rhs ctx in
       let rhs_opnd, ctx = coerce_type rhs_opnd lhs_ty.elem_ty rhs_ty.elem_ty ctx in
       let opnd_index, components, ctx = gen_opnd_index indices lhs_ty.dims ctx in
-      let wr = Tac.ArrWr (id, opnd_index, rhs_opnd, components) in
+      let mem = mem_loc_of_id id ctx in
+      let wr = Tac.Store (mem, opnd_index, rhs_opnd, components) in
       ctx |> emit wr
   | TExprStmt (Some e) ->
       let _, _, ctx = gen_exp e ctx in
@@ -411,6 +444,16 @@ let rec gen_stmt (s : t_stmt) (ctx : translation_context) : translation_context 
       let opnd, ctx = coerce_type opnd ctx.current_ret_ty ty.elem_ty ctx in
       ctx |> emit (Tac.Return (Some opnd))
   | TReturn None -> ctx |> emit (Tac.Return None)
+  | TAlloca (id, _, size) ->
+      let mem = mem_loc_of_id id ctx in
+      let _ =
+        match mem with
+        | LocalArray _ -> ()
+        | _ ->
+            internal_error
+              (Printf.sprintf "Can only alloca local arrays, not %s" (Tac.prettify_mem_loc mem))
+      in
+      ctx |> emit (Tac.Alloca (id, size))
 
 let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
     (t_exp * exp_attr * translation_context, string) agg_result =
@@ -701,13 +744,15 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
           | _, TConstExp init_exp ->
               agg_ok (Some (TAssign (id, d.Ast.const_name, dims_exprs, init_exp)), ctx)
           | _, (TConstArray _ as t_init_arr) ->
+              let size = List.fold_left ( * ) 1 dims_vals in
               let* inits, ctx = expand_const_array_init dims_vals t_init_arr ctx in
               let stmts =
-                List.map
-                  (fun (indices, expr) ->
-                    let t_indices = List.map (fun i -> TIntLit i) indices in
-                    TStmt (TAssign (id, d.Ast.const_name, t_indices, expr)))
-                  inits
+                TStmt (TAlloca (id, d.Ast.const_name, size))
+                :: List.map
+                     (fun (indices, expr) ->
+                       let t_indices = List.map (fun i -> TIntLit i) indices in
+                       TStmt (TAssign (id, d.Ast.const_name, t_indices, expr)))
+                     inits
               in
               agg_ok (Some (TBlock stmts), ctx)
         in
@@ -753,13 +798,15 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
           | _, Some (TInitExp init_exp) ->
               agg_ok (Some (TAssign (id, d.Ast.var_name, dims_exprs, init_exp)), ctx)
           | _, Some (TInitArray _ as t_init_arr) ->
+              let size = List.fold_left ( * ) 1 dims_vals in
               let* inits, ctx = expand_array_init dims_vals t_init_arr ctx in
               let stmts =
-                List.map
-                  (fun (indices, expr) ->
-                    let t_indices = List.map (fun i -> TIntLit i) indices in
-                    TStmt (TAssign (id, d.Ast.var_name, t_indices, expr)))
-                  inits
+                TStmt (TAlloca (id, d.Ast.var_name, size))
+                :: List.map
+                     (fun (indices, expr) ->
+                       let t_indices = List.map (fun i -> TIntLit i) indices in
+                       TStmt (TAssign (id, d.Ast.var_name, t_indices, expr)))
+                     inits
               in
               agg_ok (Some (TBlock stmts), ctx)
           | _, None -> agg_ok (None, ctx)

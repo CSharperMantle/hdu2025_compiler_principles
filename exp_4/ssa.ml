@@ -36,6 +36,16 @@ let prettify_phi (v : phi) : string =
   in
   Printf.sprintf "%s <- Phi %s" (prettify_value v.phi_dest) incoming_str
 
+type mem_loc =
+  | LocalArray of value
+  | GlobalScalar of int
+  | GlobalArray of int
+
+let prettify_mem_loc = function
+  | LocalArray v -> prettify_value v
+  | GlobalScalar id -> Printf.sprintf "@%d" id
+  | GlobalArray id -> Printf.sprintf "@%d" id
+
 type instr =
   | BinOp of value * Ast.bin_op * operand * operand
   | FBinOp of value * Ast.bin_op * operand * operand
@@ -45,8 +55,9 @@ type instr =
   | Itf of value * operand
   | Fti of value * operand
   | Call of value * int * operand list
-  | ArrRd of value * value * operand list
-  | ArrWr of value * operand list * operand
+  | Alloca of value * int
+  | Load of value * mem_loc * operand list
+  | Store of mem_loc * operand list * operand
 
 let instr_of_tac_instr_opt = function
   | Tac.BinOp (d, op, s1, s2) ->
@@ -59,11 +70,26 @@ let instr_of_tac_instr_opt = function
   | Tac.Itf (d, s) -> Some (Itf (new_value d, operand_of_tac_operand s))
   | Tac.Fti (d, s) -> Some (Fti (new_value d, operand_of_tac_operand s))
   | Tac.Call (d, f, args) -> Some (Call (new_value d, f, List.map operand_of_tac_operand args))
-  | Tac.ArrRd (d, b, _, indices) ->
-      Some (ArrRd (new_value d, new_value b, List.map operand_of_tac_operand indices))
-  | Tac.ArrWr (b, _, s, indices) ->
-      Some (ArrWr (new_value b, List.map operand_of_tac_operand indices, operand_of_tac_operand s))
-  | _ -> None
+  | Tac.Alloca (d, size) -> Some (Alloca (new_value d, size))
+  | Tac.Load (d, b, _, indices) ->
+      let mem =
+        match b with
+        | Tac.LocalScalar _ -> internal_error "Local scalar should not require Load"
+        | Tac.LocalArray id -> LocalArray (new_value id) (* id is the alloca'd pointer *)
+        | Tac.GlobalScalar id -> GlobalScalar id
+        | Tac.GlobalArray id -> GlobalArray id
+      in
+      Some (Load (new_value d, mem, List.map operand_of_tac_operand indices))
+  | Tac.Store (d, _, s, indices) ->
+      let mem =
+        match d with
+        | Tac.LocalArray id -> LocalArray (new_value id)
+        | Tac.GlobalScalar id -> GlobalScalar id
+        | Tac.GlobalArray id -> GlobalArray id
+        | Tac.LocalScalar _ -> internal_error "Local scalar in memory"
+      in
+      Some (Store (mem, List.map operand_of_tac_operand indices, operand_of_tac_operand s))
+  | Tac.Label _ | Tac.Jump _ | Tac.Br _ | Tac.Return _ -> None
 
 let prettify_instr = function
   | BinOp (dest, op, src1, src2) ->
@@ -85,12 +111,14 @@ let prettify_instr = function
       let args_str = List.map prettify_operand args |> String.concat ", " in
       if args = [] then Printf.sprintf "Call\t(%s, $%d)" (prettify_value dest) func_id
       else Printf.sprintf "Call\t(%s, $%d, [%s])" (prettify_value dest) func_id args_str
-  | ArrRd (dest, base, indices) ->
+  | Alloca (dest, size) -> Printf.sprintf "Alloca\t(%s, %d)" (prettify_value dest) size
+  | Load (dest, base, indices) ->
       let indices_str = List.map prettify_operand indices |> String.concat "][" in
-      Printf.sprintf "ArrRd\t(%s, %s, [%s])" (prettify_value dest) (prettify_value base) indices_str
-  | ArrWr (base, indices, src) ->
+      Printf.sprintf "Load\t(%s, %s, [%s])" (prettify_value dest) (prettify_mem_loc base)
+        indices_str
+  | Store (base, indices, src) ->
       let indices_str = List.map prettify_operand indices |> String.concat "][" in
-      Printf.sprintf "ArrWr\t(%s, [%s], %s)" (prettify_value base) indices_str
+      Printf.sprintf "Store\t(%s, [%s], %s)" (prettify_mem_loc base) indices_str
         (prettify_operand src)
 
 type terminator =
@@ -149,7 +177,7 @@ let prettify_func (f : func) : string =
     |> List.map (fun (_, bb) -> prettify_basic_block bb)
     |> String.concat "\n\n"
   in
-  Printf.sprintf "%s$%d(%s) -> %s @ %s:\n%s\n%s" f.func_name f.func_id params_str
+  Printf.sprintf "%s$%d(%s) -> %s [entry: %s]:\n%s\n%s" f.func_name f.func_id params_str
     (Tac.string_of_tac_elem_type f.func_ret_type)
     (prettify_basic_block_id f.func_entry_block)
     obj_types_str blocks_str
@@ -173,7 +201,7 @@ let prettify_program (p : program) : string =
   let globals_str =
     List.map
       (fun id ->
-        let decl = Printf.sprintf ".global\t%%%d" id in
+        let decl = Printf.sprintf ".global\t@%d" id in
         match IntMap.find_opt id p.global_init with
         | Some init -> Printf.sprintf "%s, %s" decl (Tac.prettify_tac_init init)
         | None -> decl)
@@ -344,8 +372,9 @@ let def_id_of = function
   | Itf ((id, _), _)
   | Fti ((id, _), _)
   | Call ((id, _), _, _)
-  | ArrRd ((id, _), _, _) -> Some id
-  | ArrWr _ -> None
+  | Alloca ((id, _), _)
+  | Load ((id, _), _, _) -> Some id
+  | Store _ -> None
 
 type lt_state = {
   dfnum : int IntMap.t;
@@ -610,6 +639,9 @@ let versioned_value_of_id (id : int) (rctx : rename_value_context) : value =
   | Some (v :: _) -> (id, v)
   | _ -> (id, 0)
 
+let versioned_value (v : value) (rctx : rename_value_context) : value =
+  versioned_value_of_id (fst v) rctx
+
 let versioned_operand (op : operand) (rctx : rename_value_context) : operand =
   match op with
   | Value (id, _) -> Value (versioned_value_of_id id rctx)
@@ -623,8 +655,7 @@ let look_up_value_id (id : int) (rctx : rename_value_context) : int * int list =
 let bump_version_for (id : int) (rctx : rename_value_context) : int * rename_value_context =
   let v, stack = look_up_value_id id rctx in
   let v' = v + 1 in
-  let counts = IntMap.add id v' rctx.counts
-  and stacks = IntMap.add id (v' :: stack) rctx.stacks in
+  let counts = IntMap.add id v' rctx.counts and stacks = IntMap.add id (v' :: stack) rctx.stacks in
   (v', { counts; stacks })
 
 let rewrite_instr_def_into (new_def : value) = function
@@ -636,8 +667,9 @@ let rewrite_instr_def_into (new_def : value) = function
   | Itf (_, s) -> Itf (new_def, s)
   | Fti (_, s) -> Fti (new_def, s)
   | Call (_, f, args) -> Call (new_def, f, args)
-  | ArrRd (_, b, idx) -> ArrRd (new_def, b, idx)
-  | instr -> instr
+  | Alloca (_, count) -> Alloca (new_def, count)
+  | Load (_, b, indices) -> Load (new_def, b, indices)
+  | Store _ as instr -> instr
 
 let rewrite_instr_uses (rctx : rename_value_context) = function
   | BinOp (d, op, s1, s2) -> BinOp (d, op, versioned_operand s1 rctx, versioned_operand s2 rctx)
@@ -648,13 +680,22 @@ let rewrite_instr_uses (rctx : rename_value_context) = function
   | Itf (d, s) -> Itf (d, versioned_operand s rctx)
   | Fti (d, s) -> Fti (d, versioned_operand s rctx)
   | Call (d, f, args) -> Call (d, f, List.map (fun a -> versioned_operand a rctx) args)
-  | ArrRd (d, b, idx) ->
-      ArrRd (d, versioned_value_of_id (fst b) rctx, List.map (fun a -> versioned_operand a rctx) idx)
-  | ArrWr (b, idx, s) ->
-      ArrWr
-        ( versioned_value_of_id (fst b) rctx,
-          List.map (fun a -> versioned_operand a rctx) idx,
-          versioned_operand s rctx )
+  | Alloca _ as instr -> instr
+  | Load (d, mem, indices) ->
+      let mem =
+        match mem with
+        | LocalArray v -> LocalArray (versioned_value v rctx)
+        | _ -> mem
+      in
+      Load (d, mem, List.map (fun idx -> versioned_operand idx rctx) indices)
+  | Store (mem, indices, src) ->
+      let mem =
+        match mem with
+        | LocalArray v -> LocalArray (versioned_value v rctx)
+        | _ -> mem
+      in
+      Store
+        (mem, List.map (fun idx -> versioned_operand idx rctx) indices, versioned_operand src rctx)
 
 let rewrite_terminator_uses (rctx : rename_value_context) = function
   | Br (cond, t, f) -> Br (versioned_operand cond rctx, t, f)
