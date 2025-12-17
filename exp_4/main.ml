@@ -129,7 +129,7 @@ let ssa_file (filename : string) : unit =
   Ssa.prettify_program program |> print_endline
 
 let usage () : 'a =
-  Printf.eprintf "usage: %s <lex|parse|type|tac> <source-file>\n" Sys.argv.(0);
+  Printf.eprintf "usage: %s <lex|parse|type|tac|cfg|ssa> <source-file>\n" Sys.argv.(0);
   exit 1
 
 let main () : unit =
