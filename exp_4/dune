@@ -14,7 +14,8 @@
 
 (library
   (name exp_4)
-  (libraries menhirLib)
+  (libraries menhirLib yojson iongraph)
+  (preprocess (pps ppx_deriving_yojson))
   (modules
     common
     util

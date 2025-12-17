@@ -13,6 +13,8 @@
   (menhir (>= 20250912))
   ocaml-lsp-server
   ocamlformat
-  utop))
+  utop
+  yojson
+  ppx_deriving_yojson))
 
 (using menhir 3.0)
