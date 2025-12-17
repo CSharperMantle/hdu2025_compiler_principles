@@ -618,7 +618,8 @@ let rec eval_const_dim (e : Ast.exp) (ctx : translation_context) :
   let* t_e, attr, ctx = translate_exp e ctx in
 
   match attr.const_val with
-  | Some v -> agg_ok (v, t_e, ctx)
+  | Some v when v > 0 -> agg_ok (v, t_e, ctx)
+  | Some v -> agg_error (Printf.sprintf "Array dimension `%d` is invalid" v) (1, t_e, ctx)
   | None -> agg_error "Array dimension must be a constant integer" (1, t_e, ctx)
 
 and eval_dims (dims : Ast.exp list) (acc_vals : int list) (acc_exprs : t_exp list)
