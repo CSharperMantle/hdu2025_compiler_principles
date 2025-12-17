@@ -128,8 +128,16 @@ let ssa_file (filename : string) : unit =
   let program = Ssa.build_ssa program Ssa.empty_build_ssa_context in
   Ssa.prettify_program program |> print_endline
 
+let opt_file (filename : string) : unit =
+  with_lexed filename @@ fun lexbuf ->
+  with_parsed filename lexbuf @@ fun comp_unit ->
+  with_translated filename comp_unit @@ fun (_, program) ->
+  let program = Ssa.build_ssa program Ssa.empty_build_ssa_context in
+  let program = Opt.Const_prop.simple_const_prop program in
+  Ssa.prettify_program program |> print_endline
+
 let usage () : 'a =
-  Printf.eprintf "usage: %s <lex|parse|type|tac|cfg|ssa> <source-file>\n" Sys.argv.(0);
+  Printf.eprintf "usage: %s <lex|parse|type|tac|cfg|ssa|opt> <source-file>\n" Sys.argv.(0);
   exit 1
 
 let main () : unit =
@@ -141,6 +149,7 @@ let main () : unit =
   else if cmd = "tac" then tac_file Sys.argv.(2)
   else if cmd = "cfg" then cfg_file Sys.argv.(2)
   else if cmd = "ssa" then ssa_file Sys.argv.(2)
+  else if cmd = "opt" then opt_file Sys.argv.(2)
   else usage ()
 
 let () : unit =
