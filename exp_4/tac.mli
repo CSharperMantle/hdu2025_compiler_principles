@@ -25,6 +25,8 @@ type tac_obj_type = {
   is_array : bool;
 }
 
+val prettify_tac_obj_type : tac_obj_type -> string
+
 type tac_init =
   | InitInt of int
   | InitList of tac_init list

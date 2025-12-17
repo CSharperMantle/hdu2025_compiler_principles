@@ -68,6 +68,7 @@ type program = {
   objects : Tac.tac_obj_type Common.IntMap.t;
   loop_headers : IntSet.t;
   back_edges : IntSet.t;
+  back_edge_list : (int * int) list;
   loop_depths : int IntMap.t;
 }
 

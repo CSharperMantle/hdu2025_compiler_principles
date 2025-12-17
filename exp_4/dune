@@ -27,6 +27,7 @@
     tac
     semant
     ssa
+    ssa_dump
     opt)
   (flags (:standard
     -warn-error -27

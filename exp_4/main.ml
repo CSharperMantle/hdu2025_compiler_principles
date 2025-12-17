@@ -1,6 +1,7 @@
 open Exp_4
 open Parser.MenhirInterpreter
 open Util
+open Common
 
 type parsing_error = source_location * string
 
@@ -128,29 +129,58 @@ let ssa_file (filename : string) : unit =
   let program = Ssa.build_ssa program Ssa.empty_build_ssa_context in
   Ssa.prettify_program program |> print_endline
 
-let opt_file (filename : string) : unit =
+let ssa_iongraph_file (filename : string) : unit =
   with_lexed filename @@ fun lexbuf ->
   with_parsed filename lexbuf @@ fun comp_unit ->
   with_translated filename comp_unit @@ fun (_, program) ->
   let program = Ssa.build_ssa program Ssa.empty_build_ssa_context in
-  let program = Opt.Const_prop.simple_const_prop program in
+  Ssa_dump.dump_ssa [ ("Build SSA", program) ] |> Yojson.Safe.to_string |> print_endline
+
+let opt_file (filename : string) : unit =
+  with_lexed filename @@ fun lexbuf ->
+  with_parsed filename lexbuf @@ fun comp_unit ->
+  with_translated filename comp_unit @@ fun (_, program) ->
+  let program =
+    Ssa.build_ssa program Ssa.empty_build_ssa_context |> Opt.Const_prop.simple_const_prop
+  in
   Ssa.prettify_program program |> print_endline
 
+let opt_iongraph_file (filename : string) : unit =
+  with_lexed filename @@ fun lexbuf ->
+  with_parsed filename lexbuf @@ fun comp_unit ->
+  with_translated filename comp_unit @@ fun (_, program) ->
+  let prog_1 = Ssa.build_ssa program Ssa.empty_build_ssa_context in
+  let prog_2 = Opt.Const_prop.simple_const_prop prog_1 in
+  Ssa_dump.dump_ssa [ ("Build SSA", prog_1); ("Simple Const Prop", prog_2) ]
+  |> Yojson.Safe.to_string |> print_endline
+
+module StringMap = Map.Make (String)
+
+let commands : (string * (string -> unit)) list =
+  [
+    ("lex", lex_file);
+    ("parse", parse_file);
+    ("type", type_file);
+    ("tac", tac_file);
+    ("cfg", cfg_file);
+    ("ssa", ssa_file);
+    ("ssa-iongraph", ssa_iongraph_file);
+    ("opt", opt_file);
+    ("opt-iongraph", opt_iongraph_file);
+  ]
+
 let usage () : 'a =
-  Printf.eprintf "usage: %s <lex|parse|type|tac|cfg|ssa|opt> <source-file>\n" Sys.argv.(0);
+  Printf.eprintf "usage: %s <cmd> <source-file>\n" Sys.argv.(0);
+  Printf.eprintf "Known commands:\n";
+  Printf.eprintf "%s\n" (List.map fst commands |> indent |> String.concat "\n");
   exit 1
 
 let main () : unit =
   if Array.length Sys.argv < 3 then usage ();
   let cmd = String.trim Sys.argv.(1) in
-  if cmd = "lex" then lex_file Sys.argv.(2)
-  else if cmd = "parse" then parse_file Sys.argv.(2)
-  else if cmd = "type" then type_file Sys.argv.(2)
-  else if cmd = "tac" then tac_file Sys.argv.(2)
-  else if cmd = "cfg" then cfg_file Sys.argv.(2)
-  else if cmd = "ssa" then ssa_file Sys.argv.(2)
-  else if cmd = "opt" then opt_file Sys.argv.(2)
-  else usage ()
+  match List.assoc_opt cmd commands with
+  | Some handler -> handler Sys.argv.(2)
+  | None -> usage ()
 
 let () : unit =
   if not !Sys.interactive then (

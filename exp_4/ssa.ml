@@ -197,6 +197,7 @@ type program = {
   objects : Tac.tac_obj_type IntMap.t;
   loop_headers : IntSet.t;
   back_edges : IntSet.t;
+  back_edge_list : (int * int) list;
   loop_depths : int IntMap.t;
 }
 
@@ -228,6 +229,7 @@ type build_ssa_context = {
   dom_tree : IntSet.t IntMap.t;
   loop_headers : IntSet.t;
   back_edges : IntSet.t;
+  back_edge_list : (int * int) list;
   loop_depths : int IntMap.t;
 }
 
@@ -244,6 +246,7 @@ let empty_build_ssa_context : build_ssa_context =
     dom_tree = IntMap.empty;
     loop_headers = IntSet.empty;
     back_edges = IntSet.empty;
+    back_edge_list = [];
     loop_depths = IntMap.empty;
   }
 
@@ -340,6 +343,8 @@ let build_func_cfg (tac_func : Tac.tac_function) (ctx : build_ssa_context) :
           succs acc)
       successors IntMap.empty
   in
+  let successors = IntMap.fold IntMap.add successors ctx.successors
+  and predecessors = IntMap.fold IntMap.add predecessors ctx.predecessors in
   let ctx = { ctx with successors; predecessors }
   and func =
     {
@@ -370,6 +375,7 @@ let build_cfg (program : Tac.tac_program) (ctx : build_ssa_context) : program * 
       objects = program.objects;
       loop_headers = IntSet.empty;
       back_edges = IntSet.empty;
+      back_edge_list = [];
       loop_depths = IntMap.empty;
     }
   in
@@ -628,6 +634,7 @@ let compute_loop_props (func : func) (ctx : build_ssa_context) : build_ssa_conte
     ctx with
     loop_headers = IntSet.union ctx.loop_headers headers;
     back_edges = IntSet.union ctx.back_edges back_edge_sources;
+    back_edge_list = ctx.back_edge_list @ back_edges;
     loop_depths = IntMap.union (fun _ v_orig _ -> Some v_orig) ctx.loop_depths depths;
   }
 
@@ -855,7 +862,7 @@ let rename_value (func : func) (ctx : build_ssa_context) : func * build_ssa_cont
 
 let build_ssa (program : Tac.tac_program) (ctx : build_ssa_context) : program =
   let program, ctx = build_cfg program ctx in
-  let funcs, _ =
+  let funcs, ctx =
     List.fold_left
       (fun (funcs, ctx) func ->
         let ctx = compute_dom_frontier func ctx in
@@ -865,4 +872,11 @@ let build_ssa (program : Tac.tac_program) (ctx : build_ssa_context) : program =
         (func :: funcs, ctx))
       ([], ctx) program.functions
   in
-  { program with functions = List.rev funcs }
+  {
+    program with
+    functions = List.rev funcs;
+    loop_headers = ctx.loop_headers;
+    back_edges = ctx.back_edges;
+    back_edge_list = ctx.back_edge_list;
+    loop_depths = ctx.loop_depths;
+  }
