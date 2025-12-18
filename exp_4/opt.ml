@@ -55,6 +55,48 @@ let uses_of_terminator (term : Ssa.terminator) : Ssa.value list =
   | Return (Some op) -> uses_of_operand op
   | Return None | Jump _ -> []
 
+(*
+  Generic function for rewriting all uses in a instruction.
+  Returns:
+    * Rewritten instruction
+    * If rewriting has happened
+*)
+let generic_rewrite_uses_of_instr (rewrite : Ssa.operand -> Ssa.operand * bool) (instr : Ssa.instr)
+    : Ssa.instr * bool =
+  match instr with
+  | Ssa.BinOp (d, op, s1, s2) ->
+      let s1', c1 = rewrite s1 and s2', c2 = rewrite s2 in
+      (Ssa.BinOp (d, op, s1', s2'), c1 || c2)
+  | Ssa.FBinOp (d, op, s1, s2) ->
+      let s1', c1 = rewrite s1 and s2', c2 = rewrite s2 in
+      (Ssa.FBinOp (d, op, s1', s2'), c1 || c2)
+  | Ssa.UnaryOp (d, op, s) ->
+      let s', c = rewrite s in
+      (Ssa.UnaryOp (d, op, s'), c)
+  | Ssa.FUnaryOp (d, op, s) ->
+      let s', c = rewrite s in
+      (Ssa.FUnaryOp (d, op, s'), c)
+  | Ssa.Move (d, s) ->
+      let s', c = rewrite s in
+      (Ssa.Move (d, s'), c)
+  | Ssa.Itf (d, s) ->
+      let s', c = rewrite s in
+      (Ssa.Itf (d, s'), c)
+  | Ssa.Fti (d, s) ->
+      let s', c = rewrite s in
+      (Ssa.Fti (d, s'), c)
+  | Ssa.Call (d, f, args) ->
+      let args', changes = List.split (List.map rewrite args) in
+      (Ssa.Call (d, f, args'), List.exists Fun.id changes)
+  | Ssa.Load (d, mem, indices) ->
+      let indices', changes = List.split (List.map rewrite indices) in
+      (Ssa.Load (d, mem, indices'), List.exists Fun.id changes)
+  | Ssa.Store (mem, indices, src) ->
+      let indices', changes1 = List.split (List.map rewrite indices) in
+      let src', c2 = rewrite src in
+      (Ssa.Store (mem, indices', src'), List.exists Fun.id changes1 || c2)
+  | Ssa.Alloca _ -> (instr, false)
+
 module Const_prop = struct
   type const_val =
     | CInt of int
@@ -176,41 +218,7 @@ module Const_prop = struct
 
   let rewrite_instr (map : const_val ValueMap.t) (instr : Ssa.instr) : Ssa.instr * bool =
     let rewrite_operand = rewrite_operand map in
-    let instr, changed1 =
-      match instr with
-      | Ssa.BinOp (d, op, s1, s2) ->
-          let s1', c1 = rewrite_operand s1 and s2', c2 = rewrite_operand s2 in
-          (Ssa.BinOp (d, op, s1', s2'), c1 || c2)
-      | Ssa.FBinOp (d, op, s1, s2) ->
-          let s1', c1 = rewrite_operand s1 and s2', c2 = rewrite_operand s2 in
-          (Ssa.FBinOp (d, op, s1', s2'), c1 || c2)
-      | Ssa.UnaryOp (d, op, s) ->
-          let s', c = rewrite_operand s in
-          (Ssa.UnaryOp (d, op, s'), c)
-      | Ssa.FUnaryOp (d, op, s) ->
-          let s', c = rewrite_operand s in
-          (Ssa.FUnaryOp (d, op, s'), c)
-      | Ssa.Move (d, s) ->
-          let s', c = rewrite_operand s in
-          (Ssa.Move (d, s'), c)
-      | Ssa.Itf (d, s) ->
-          let s', c = rewrite_operand s in
-          (Ssa.Itf (d, s'), c)
-      | Ssa.Fti (d, s) ->
-          let s', c = rewrite_operand s in
-          (Ssa.Fti (d, s'), c)
-      | Ssa.Call (d, f, args) ->
-          let args', changes = List.split (List.map rewrite_operand args) in
-          (Ssa.Call (d, f, args'), List.exists Fun.id changes)
-      | Ssa.Load (d, mem, indices) ->
-          let indices', changes = List.split (List.map rewrite_operand indices) in
-          (Ssa.Load (d, mem, indices'), List.exists Fun.id changes)
-      | Ssa.Store (mem, indices, src) ->
-          let indices', changes1 = List.split (List.map rewrite_operand indices) in
-          let src', c2 = rewrite_operand src in
-          (Ssa.Store (mem, indices', src'), List.exists Fun.id changes1 || c2)
-      | _ -> (instr, false)
-    in
+    let instr, changed1 = generic_rewrite_uses_of_instr rewrite_operand instr in
     def_value_of_opt instr
     |> map_or_default
          (fun v ->
@@ -262,6 +270,85 @@ module Const_prop = struct
 
   let simple_const_prop (p : Ssa.program) : Ssa.program =
     { p with functions = List.map simple_const_prop_func p.functions }
+end
+
+module Copy_prop = struct
+  let collect_copies (f : Ssa.func) : Ssa.operand ValueMap.t =
+    IntMap.fold
+      (fun _ bb map ->
+        List.fold_left
+          (fun acc instr ->
+            match instr with
+            | Ssa.Move (d, src) -> ValueMap.add d src acc
+            | _ -> acc)
+          map bb.Ssa.bb_code)
+      f.Ssa.func_blocks ValueMap.empty
+
+  let rec resolve_operand (map : Ssa.operand ValueMap.t) (op : Ssa.operand) : Ssa.operand =
+    match op with
+    | Ssa.Value v -> (
+        match ValueMap.find_opt v map with
+        | Some resolved -> resolve_operand map resolved
+        | None -> op)
+    | _ -> op
+
+  let propagate_in_operand (map : Ssa.operand ValueMap.t) (op : Ssa.operand) : Ssa.operand * bool =
+    let resolved = resolve_operand map op in
+    (resolved, resolved <> op)
+
+  let propagate_in_instr (map : Ssa.operand ValueMap.t) (instr : Ssa.instr) : Ssa.instr * bool =
+    let prop = propagate_in_operand map in
+    generic_rewrite_uses_of_instr prop instr
+
+  let propagate_in_phi (map : Ssa.operand ValueMap.t) (phi : Ssa.phi) : Ssa.phi * bool =
+    let incoming', changes =
+      IntMap.fold
+        (fun bb_id v (acc, changed) ->
+          let resolved = resolve_operand map (Ssa.Value v) in
+          match resolved with
+          | Ssa.Value v' -> (IntMap.add bb_id v' acc, changed || v' <> v)
+          | _ -> (acc, changed))
+        phi.Ssa.phi_incoming (IntMap.empty, false)
+    in
+    ({ phi with phi_incoming = incoming' }, changes)
+
+  let propagate_in_terminator (map : Ssa.operand ValueMap.t) (term : Ssa.terminator) :
+      Ssa.terminator * bool =
+    match term with
+    | Ssa.Br (cond, t, f) ->
+        let cond', changed = propagate_in_operand map cond in
+        (Ssa.Br (cond', t, f), changed)
+    | Ssa.Return (Some op) ->
+        let op', changed = propagate_in_operand map op in
+        (Ssa.Return (Some op'), changed)
+    | _ -> (term, false)
+
+  let copy_prop_func (f : Ssa.func) : Ssa.func =
+    let rec aux f_curr =
+      let map = collect_copies f_curr in
+      if ValueMap.is_empty map then f_curr
+      else
+        let blocks', changed =
+          IntMap.fold
+            (fun bb_id bb (blocks, changed_acc) ->
+              let phis, phi_changes = List.split (List.map (propagate_in_phi map) bb.Ssa.bb_phis) in
+              let code, code_changes =
+                List.split (List.map (propagate_in_instr map) bb.Ssa.bb_code)
+              in
+              let term, term_changed = propagate_in_terminator map bb.Ssa.bb_term in
+              let bb_changed =
+                List.exists Fun.id phi_changes || List.exists Fun.id code_changes || term_changed
+              in
+              let new_bb = { bb with Ssa.bb_phis = phis; Ssa.bb_code = code; Ssa.bb_term = term } in
+              (IntMap.add bb_id new_bb blocks, changed_acc || bb_changed))
+            f_curr.Ssa.func_blocks (IntMap.empty, false)
+        in
+        if changed then aux { f_curr with func_blocks = blocks' } else f_curr
+    in
+    aux f
+
+  let copy_prop (p : Ssa.program) : Ssa.program =
+    { p with functions = List.map copy_prop_func p.functions }
 end
 
 module Dead_code_elim = struct
