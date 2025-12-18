@@ -1,0 +1,10 @@
+void bar(int a) { }
+
+int foo(int a) {
+    int x = 1;
+    if (a > 0) {
+        x = x + 1;
+        bar(x);
+    }
+    return x;
+}

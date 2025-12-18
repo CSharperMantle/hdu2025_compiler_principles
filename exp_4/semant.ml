@@ -980,6 +980,12 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
             let func_id, ctx_body = alloc_func f.Ast.func_name arg_tys ret_ty ctx_body in
             let* t_body, ctx_body = translate_block_items f.Ast.func_body ret_ty false ctx_body in
             let ctx_body = gen_stmt (TBlock t_body) ctx_body in
+            let ctx_body =
+              if ctx_body.current_ret_ty = VoidType then
+                (* Unconditionally append a return at the end for `void` functions. *)
+                gen_stmt (TBlock [ TStmt (TReturn None) ]) ctx_body
+              else ctx_body
+            in
             let ctx = merge_func_context func_id f t_params arg_tys ret_ty ctx_body ctx in
             let* rest_items, ctx = translate_comp_unit_item_list rest ctx in
             let t_func =
