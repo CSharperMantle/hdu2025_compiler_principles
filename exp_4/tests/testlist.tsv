@@ -40,3 +40,5 @@ ssa	tests/test_ssa_globals_1.sy	success
 ssa	tests/test_ssa_no_ret.sy	success		
 opt	tests/program_quicksort.sy	success		
 opt	tests/test_ssa_globals_1.sy	success		
+opt	tests/program_synthetic_1.sy	success		
+opt-iongraph	tests/program_synthetic_1.sy	success		

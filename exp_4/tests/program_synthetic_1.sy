@@ -1,0 +1,94 @@
+const int N = 100;
+const int M = 50;
+
+int compute(int x, int y) {
+    // Constant propagation opportunities
+    const int a = 10;
+    const int b = 20;
+    int c = a + b;          // Should be constant folded to 30
+    
+    // Copy propagation opportunities
+    int temp1 = x;
+    int temp2 = temp1;      // temp2 should propagate to x
+    int result = temp2 + y;
+    
+    // Dead code opportunities
+    int dead1 = result * 2;
+    int dead2 = dead1 + 5;
+    // dead1 and dead2 are never used
+    
+    return result;
+}
+
+int loop_optimizations(int arr[]) {
+    int sum = 0;
+    int i = 0;
+    
+    // Loop with constant bounds
+    while (i < N) {
+        // Constant inside loop
+        const int factor = 2;
+        int val = arr[i];
+        
+        // Operations that could be optimized
+        int doubled = val * factor;  // factor is constant 2
+        int temp = doubled;
+        sum = sum + temp;            // copy propagation: temp -> doubled
+        
+        i = i + 1;
+    }
+    
+    // More dead code
+    int unused1 = sum * 3;
+    int unused2 = unused1 + 10;
+    
+    return sum;
+}
+
+int conditional_optimizations(int x, int y) {
+    // Constant conditions
+    const int threshold = 100;
+    int result = 0;
+    
+    if (x < threshold) {
+        // Constant expression
+        const int offset = 5;
+        result = y + offset;  // offset is constant 5
+    } else {
+        // More copy chains
+        int copy1 = y;
+        int copy2 = copy1;
+        int copy3 = copy2;
+        result = copy3 * 2;
+    }
+    
+    // Dead code after return (if placed incorrectly)
+    int dead_after_return = result + 100;
+    
+    return result;
+}
+
+int main() {
+    int arr[N];
+    
+    // Initialize array with some values
+    int i = 0;
+    while (i < N) {
+        arr[i] = i * 2;
+        i = i + 1;
+    }
+    
+    // Test various optimizations
+    int x = compute(5, 10);
+    int y = loop_optimizations(arr);
+    int z = conditional_optimizations(50, 20);
+    
+    // Final computation with optimization opportunities
+    const int final_const = 100;
+    int final_result = x + y + z + final_const;
+    
+    // More dead code at the end
+    int last_unused = final_result * 2;
+    
+    return final_result;
+}

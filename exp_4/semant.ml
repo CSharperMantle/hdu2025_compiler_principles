@@ -810,7 +810,11 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
                      inits
               in
               agg_ok (Some (TBlock stmts), ctx)
-          | _, None -> agg_ok (None, ctx)
+          | _, None ->
+              if dims_vals = [] then agg_ok (None, ctx)
+              else
+                let size = List.fold_left ( * ) 1 dims_vals in
+                agg_ok (Some (TBlock [ TStmt (TAlloca (id, d.Ast.var_name, size)) ]), ctx)
         in
         let t_def =
           {
