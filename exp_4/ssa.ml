@@ -195,6 +195,9 @@ type program = {
   global_init : Tac.tac_init IntMap.t;
   functions : func list;
   objects : Tac.tac_obj_type IntMap.t;
+  loop_headers : IntSet.t;
+  back_edges : IntSet.t;
+  loop_depths : int IntMap.t;
 }
 
 let prettify_program (p : program) : string =
@@ -223,6 +226,9 @@ type build_ssa_context = {
   dom_frontier : IntSet.t IntMap.t;
   idom : int IntMap.t;
   dom_tree : IntSet.t IntMap.t;
+  loop_headers : IntSet.t;
+  back_edges : IntSet.t;
+  loop_depths : int IntMap.t;
 }
 
 let alloc_bb_id (ctx : build_ssa_context) : int * build_ssa_context =
@@ -236,6 +242,9 @@ let empty_build_ssa_context : build_ssa_context =
     dom_frontier = IntMap.empty;
     idom = IntMap.empty;
     dom_tree = IntMap.empty;
+    loop_headers = IntSet.empty;
+    back_edges = IntSet.empty;
+    loop_depths = IntMap.empty;
   }
 
 let rec partition_cfg_blocks (instrs : Tac.tac_instr list) (acc_labels : int list)
@@ -359,6 +368,9 @@ let build_cfg (program : Tac.tac_program) (ctx : build_ssa_context) : program * 
       global_init = program.global_init;
       functions = List.rev functions;
       objects = program.objects;
+      loop_headers = IntSet.empty;
+      back_edges = IntSet.empty;
+      loop_depths = IntMap.empty;
     }
   in
   (program, ctx)
@@ -559,6 +571,65 @@ let compute_dom_frontier (func : func) (ctx : build_ssa_context) : build_ssa_con
   in
   let ctx = { ctx with idom; dom_tree } in
   compute_df func.func_entry_block ctx
+
+let compute_loop_props (func : func) (ctx : build_ssa_context) : build_ssa_context =
+  let rec dominates target source =
+    if target = source then true
+    else
+      match IntMap.find_opt source ctx.idom with
+      | Some idom -> if idom = source then false else dominates target idom
+      | None -> false
+  in
+  let back_edges =
+    IntMap.fold
+      (fun u _ acc ->
+        let succs = IntMap.find_opt u ctx.successors |> or_default IntSet.empty in
+        IntSet.fold (fun v acc -> if dominates v u then (u, v) :: acc else acc) succs acc)
+      func.func_blocks []
+  in
+  let headers = List.fold_left (fun acc (_, h) -> IntSet.add h acc) IntSet.empty back_edges in
+  let back_edge_sources =
+    List.fold_left (fun acc (u, _) -> IntSet.add u acc) IntSet.empty back_edges
+  in
+  let loops =
+    List.fold_left
+      (fun acc (u, h) ->
+        let cur = IntMap.find_opt h acc |> or_default [] in
+        IntMap.add h (u :: cur) acc)
+      IntMap.empty back_edges
+  in
+  let depths =
+    IntMap.fold
+      (fun h sources acc ->
+        let rec loop_body worklist visited =
+          match worklist with
+          | [] -> visited
+          | n :: rest ->
+              if IntSet.mem n visited then loop_body rest visited
+              else
+                let visited = IntSet.add n visited in
+                let preds = IntMap.find_opt n ctx.predecessors |> or_default IntSet.empty in
+                let new_work =
+                  IntSet.to_seq preds
+                  |> Seq.filter_map (fun p -> if p <> h then Some p else None)
+                  |> List.of_seq
+                in
+                loop_body (new_work @ rest) visited
+        in
+        let body = loop_body sources (IntSet.singleton h) in
+        IntSet.fold
+          (fun b acc ->
+            let d = IntMap.find_opt b acc |> or_default 0 in
+            IntMap.add b (d + 1) acc)
+          body acc)
+      loops IntMap.empty
+  in
+  {
+    ctx with
+    loop_headers = IntSet.union ctx.loop_headers headers;
+    back_edges = IntSet.union ctx.back_edges back_edge_sources;
+    loop_depths = IntMap.union (fun _ v_orig _ -> Some v_orig) ctx.loop_depths depths;
+  }
 
 (* Algorithm 19.6, "Modern Compiler Implementation in C", Appel. *)
 let insert_phi (func : func) (ctx : build_ssa_context) : func * build_ssa_context =
@@ -788,6 +859,7 @@ let build_ssa (program : Tac.tac_program) (ctx : build_ssa_context) : program =
     List.fold_left
       (fun (funcs, ctx) func ->
         let ctx = compute_dom_frontier func ctx in
+        let ctx = compute_loop_props func ctx in
         let func, ctx = insert_phi func ctx in
         let func, ctx = rename_value func ctx in
         (func :: funcs, ctx))

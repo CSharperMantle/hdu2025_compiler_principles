@@ -66,6 +66,9 @@ type program = {
   global_init : Tac.tac_init Common.IntMap.t;
   functions : func list;
   objects : Tac.tac_obj_type Common.IntMap.t;
+  loop_headers : IntSet.t;
+  back_edges : IntSet.t;
+  loop_depths : int IntMap.t;
 }
 
 val prettify_program : program -> string
