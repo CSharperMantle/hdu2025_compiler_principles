@@ -456,21 +456,28 @@ let collect_passes (passes : Iongraph.Types.func list) : Iongraph.Types.func opt
       Some { func with passes = List.rev func.passes }
 
 let dump_ssa (passes : (string * Ssa.program) list) : Yojson.Safe.t =
-  let all_funcs =
+  (* First, collect all functions with their passes in order *)
+  let func_passes_map =
     List.fold_left
-      (fun acc (pass_name, prog) ->
-        let funcs_in_pass = List.map (dump_func pass_name prog) prog.functions in
+      (fun map (pass_name, prog) ->
         List.fold_left
-          (fun acc func ->
-            match List.find_opt (fun f -> f.name = func.name) acc with
-            | Some existing -> (
-                let others = List.filter (fun f -> f.name <> func.name) acc in
-                match collect_passes [ existing; func ] with
-                | Some merged -> merged :: others
-                | None -> func :: others)
-            | None -> func :: acc)
-          acc funcs_in_pass)
-      [] passes
+          (fun map func ->
+            let func_name = func.func_name in
+            let pass_func = dump_func pass_name prog func in
+            match StringMap.find_opt func_name map with
+            | Some existing_passes ->
+                (* Add new pass to the end to maintain order *)
+                StringMap.add func_name (existing_passes @ [ pass_func ]) map
+            | None -> StringMap.add func_name [ pass_func ] map)
+          map prog.functions)
+      StringMap.empty passes
+  in
+
+  (* Then merge passes for each function in the correct order *)
+  let all_funcs =
+    StringMap.to_seq func_passes_map
+    |> Seq.filter_map (fun (_, passes) -> collect_passes passes)
+    |> Seq.fold_left (fun acc func -> func :: acc) []
   in
 
   let obj = { version = current_version; functions = all_funcs } in
