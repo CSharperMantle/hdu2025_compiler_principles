@@ -97,6 +97,31 @@ let generic_rewrite_uses_of_instr (rewrite : Ssa.operand -> Ssa.operand * bool) 
       (Ssa.Store (mem, indices', src'), List.exists Fun.id changes1 || c2)
   | Ssa.Alloca _ -> (instr, false)
 
+let generic_rewrite_uses_of_terminator (rewrite : Ssa.operand -> Ssa.operand * bool)
+    (term : Ssa.terminator) : Ssa.terminator * bool =
+  match term with
+  | Ssa.Br (cond, t, f) ->
+      let cond', changed = rewrite cond in
+      (Ssa.Br (cond', t, f), changed)
+  | Ssa.Return None -> (term, false)
+  | Ssa.Return (Some op) ->
+      let op', changed = rewrite op in
+      (Ssa.Return (Some op'), changed)
+  | Ssa.Jump _ -> (term, false)
+
+let generic_rewrite_uses_of_phi (resolve : Ssa.operand -> Ssa.operand) (phi : Ssa.phi) :
+    Ssa.phi * bool =
+  let incoming', changed =
+    IntMap.fold
+      (fun bb_id v (acc, changed) ->
+        let resolved = resolve (Ssa.Value v) in
+        match resolved with
+        | Ssa.Value v' -> (IntMap.add bb_id v' acc, changed || v' <> v)
+        | _ -> (acc, changed))
+      phi.Ssa.phi_incoming (IntMap.empty, false)
+  in
+  ({ phi with phi_incoming = incoming' }, changed)
+
 module Const_prop = struct
   type const_val =
     | CInt of int
@@ -236,20 +261,8 @@ module Const_prop = struct
 
   let rewrite_terminator (map : const_val ValueMap.t) (term : Ssa.terminator) :
       Ssa.terminator * bool =
-    match term with
-    | Ssa.Br (cond, t, f) ->
-        let cond', changed = rewrite_operand map cond in
-        (Ssa.Br (cond', t, f), changed)
-    | Ssa.Return op ->
-        let op', changed =
-          map_or_default
-            (fun o ->
-              let o', c = rewrite_operand map o in
-              (Some o', c))
-            (None, false) op
-        in
-        (Ssa.Return op', changed)
-    | _ -> (term, false)
+    let rewrite_operand = rewrite_operand map in
+    generic_rewrite_uses_of_terminator rewrite_operand term
 
   let simple_const_prop_func (f : Ssa.func) : Ssa.func =
     let rec aux f_curr =
@@ -301,27 +314,13 @@ module Copy_prop = struct
     generic_rewrite_uses_of_instr prop instr
 
   let propagate_in_phi (map : Ssa.operand ValueMap.t) (phi : Ssa.phi) : Ssa.phi * bool =
-    let incoming', changes =
-      IntMap.fold
-        (fun bb_id v (acc, changed) ->
-          let resolved = resolve_operand map (Ssa.Value v) in
-          match resolved with
-          | Ssa.Value v' -> (IntMap.add bb_id v' acc, changed || v' <> v)
-          | _ -> (acc, changed))
-        phi.Ssa.phi_incoming (IntMap.empty, false)
-    in
-    ({ phi with phi_incoming = incoming' }, changes)
+    let resolve = resolve_operand map in
+    generic_rewrite_uses_of_phi resolve phi
 
   let propagate_in_terminator (map : Ssa.operand ValueMap.t) (term : Ssa.terminator) :
       Ssa.terminator * bool =
-    match term with
-    | Ssa.Br (cond, t, f) ->
-        let cond', changed = propagate_in_operand map cond in
-        (Ssa.Br (cond', t, f), changed)
-    | Ssa.Return (Some op) ->
-        let op', changed = propagate_in_operand map op in
-        (Ssa.Return (Some op'), changed)
-    | _ -> (term, false)
+    let prop = propagate_in_operand map in
+    generic_rewrite_uses_of_terminator prop term
 
   let copy_prop_func (f : Ssa.func) : Ssa.func =
     let rec aux f_curr =
