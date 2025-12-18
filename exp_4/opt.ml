@@ -1,17 +1,66 @@
+open Common
+
+module ValueSet = Set.Make (struct
+  type t = Ssa.value
+
+  let compare = compare
+end)
+
+module ValueMap = Map.Make (struct
+  type t = Ssa.value
+
+  let compare = compare
+end)
+
+let def_value_of_opt (instr : Ssa.instr) : Ssa.value option =
+  match instr with
+  | BinOp (d, _, _, _)
+  | FBinOp (d, _, _, _)
+  | UnaryOp (d, _, _)
+  | FUnaryOp (d, _, _)
+  | Move (d, _)
+  | Itf (d, _)
+  | Fti (d, _)
+  | Call (d, _, _)
+  | Alloca (d, _)
+  | Load (d, _, _) -> Some d
+  | Store _ -> None
+
+let uses_of_operand (op : Ssa.operand) : Ssa.value list =
+  match op with
+  | Value v -> [ v ]
+  | Const _ | ConstFloat _ -> []
+
+let uses_of_mem (m : Ssa.mem_loc) : Ssa.value list =
+  match m with
+  | LocalArray v -> [ v ]
+  | GlobalArray _ | GlobalScalar _ -> []
+
+let uses_of_instr (instr : Ssa.instr) : Ssa.value list =
+  match instr with
+  | BinOp (_, _, s1, s2) | FBinOp (_, _, s1, s2) -> uses_of_operand s1 @ uses_of_operand s2
+  | UnaryOp (_, _, s) | FUnaryOp (_, _, s) | Move (_, s) | Itf (_, s) | Fti (_, s) ->
+      uses_of_operand s
+  | Call (_, _, args) -> List.map uses_of_operand args |> List.concat
+  | Alloca _ -> []
+  | Load (_, m, indices) -> uses_of_mem m @ (List.map uses_of_operand indices |> List.concat)
+  | Store (m, indices, s) ->
+      uses_of_mem m @ (List.map uses_of_operand indices |> List.concat) @ uses_of_operand s
+
+let uses_of_phi (phi : Ssa.phi) : Ssa.value list = IntMap.bindings phi.phi_incoming |> List.map snd
+
+let uses_of_terminator (term : Ssa.terminator) : Ssa.value list =
+  match term with
+  | Br (cond, _, _) -> uses_of_operand cond
+  | Return (Some op) -> uses_of_operand op
+  | Return None | Jump _ -> []
+
 module Const_prop = struct
-  open Common
-
-  module ValueMap = Map.Make (struct
-    type t = Ssa.value
-
-    let compare = compare
-  end)
-
   type const_val =
     | CInt of int
     | CFloat of float
 
-  let ssa_operand_of = function
+  let operand_of = function
     | CInt i -> Ssa.Const i
     | CFloat f -> Ssa.ConstFloat f
 
@@ -55,19 +104,6 @@ module Const_prop = struct
     | CInt i, Ast.Not -> Some (CInt (Bool.to_int (i = 0)))
     | CFloat f, Ast.Neg -> Some (CFloat (-.f))
     | _ -> None
-
-  let def_value_of = function
-    | Ssa.BinOp (d, _, _, _)
-    | Ssa.FBinOp (d, _, _, _)
-    | Ssa.UnaryOp (d, _, _)
-    | Ssa.FUnaryOp (d, _, _)
-    | Ssa.Move (d, _)
-    | Ssa.Itf (d, _)
-    | Ssa.Fti (d, _)
-    | Ssa.Call (d, _, _)
-    | Ssa.Alloca (d, _)
-    | Ssa.Load (d, _, _) -> Some d
-    | Ssa.Store _ -> None
 
   let collect_const_from_instr (map : const_val ValueMap.t) (instr : Ssa.instr) :
       const_val ValueMap.t =
@@ -134,12 +170,8 @@ module Const_prop = struct
     |> map_or_default
          (fun c ->
            match c with
-           | CInt i ->
-               let changed = op <> Const i in
-               (Ssa.Const i, changed)
-           | CFloat f ->
-               let changed = op <> ConstFloat f in
-               (Ssa.ConstFloat f, changed))
+           | CInt i -> (Ssa.Const i, op <> Const i)
+           | CFloat f -> (Ssa.ConstFloat f, op <> ConstFloat f))
          (op, false)
 
   let rewrite_instr (map : const_val ValueMap.t) (instr : Ssa.instr) : Ssa.instr * bool =
@@ -179,13 +211,13 @@ module Const_prop = struct
           (Ssa.Store (mem, indices', src'), List.exists Fun.id changes1 || c2)
       | _ -> (instr, false)
     in
-    def_value_of instr
+    def_value_of_opt instr
     |> map_or_default
          (fun v ->
            ValueMap.find_opt v map
            |> map_or_default
                 (fun c ->
-                  let const_op = ssa_operand_of c in
+                  let const_op = operand_of c in
                   match instr with
                   | Move (_, src) when src = const_op -> (instr, changed1)
                   | BinOp _ | FBinOp _ | UnaryOp _ | FUnaryOp _ | Itf _ | Fti _ ->
@@ -202,12 +234,11 @@ module Const_prop = struct
         (Ssa.Br (cond', t, f), changed)
     | Ssa.Return op ->
         let op', changed =
-          op
-          |> map_or_default
-               (fun o ->
-                 let o', c = rewrite_operand map o in
-                 (Some o', c))
-               (None, false)
+          map_or_default
+            (fun o ->
+              let o', c = rewrite_operand map o in
+              (Some o', c))
+            (None, false) op
         in
         (Ssa.Return op', changed)
     | _ -> (term, false)
@@ -231,4 +262,95 @@ module Const_prop = struct
 
   let simple_const_prop (p : Ssa.program) : Ssa.program =
     { p with functions = List.map simple_const_prop_func p.functions }
+end
+
+module Dead_code_elim = struct
+  type definition =
+    | DefInstr of Ssa.instr
+    | DefPhi of Ssa.phi
+    | DefParam
+
+  let dce_func (f : Ssa.func) : Ssa.func =
+    (* 1. Collect defs *)
+    let defs =
+      let map =
+        List.fold_left (fun acc p -> ValueMap.add p DefParam acc) ValueMap.empty f.func_params
+      in
+      IntMap.fold
+        (fun _ bb map ->
+          let map =
+            List.fold_left
+              (fun acc phi -> ValueMap.add phi.Ssa.phi_dest (DefPhi phi) acc)
+              map bb.Ssa.bb_phis
+          in
+          List.fold_left
+            (fun acc instr ->
+              match def_value_of_opt instr with
+              | Some d -> ValueMap.add d (DefInstr instr) acc
+              | None -> acc)
+            map bb.bb_code)
+        f.func_blocks map
+    in
+    (* 2. Find critical instrs (Store, Call, terminators) and initial live values *)
+    let worklist, live =
+      IntMap.fold
+        (fun _ bb (wl, live) ->
+          let wl, live =
+            List.fold_left
+              (fun (wl, live) instr ->
+                match instr with
+                | Ssa.Store _ | Ssa.Call _ ->
+                    let uses = uses_of_instr instr in
+                    let uses = List.filter (fun u -> not (ValueSet.mem u live)) uses in
+                    (uses @ wl, List.fold_right ValueSet.add uses live)
+                | _ -> (wl, live))
+              (wl, live) bb.Ssa.bb_code
+          in
+          let uses = uses_of_terminator bb.Ssa.bb_term in
+          let uses = List.filter (fun u -> not (ValueSet.mem u live)) uses in
+          (uses @ wl, List.fold_right ValueSet.add uses live))
+        f.func_blocks ([], ValueSet.empty)
+    in
+    (* 3. Collect liveness *)
+    let rec propagate wl live =
+      match wl with
+      | [] -> live
+      | v :: rest -> (
+          match ValueMap.find_opt v defs with
+          | None -> propagate rest live
+          | Some def ->
+              let uses =
+                match def with
+                | DefInstr i -> uses_of_instr i
+                | DefPhi p -> uses_of_phi p
+                | DefParam -> []
+              in
+              let uses = List.filter (fun u -> not (ValueSet.mem u live)) uses in
+              let live = List.fold_right ValueSet.add uses live in
+              propagate (uses @ rest) live)
+    in
+    let liveness = propagate worklist live in
+    (* 4. Sweep *)
+    let new_blocks =
+      IntMap.map
+        (fun bb ->
+          let bb_phis =
+            List.filter (fun phi -> ValueSet.mem phi.Ssa.phi_dest liveness) bb.Ssa.bb_phis
+          in
+          let bb_code =
+            List.filter
+              (fun instr ->
+                match (instr, def_value_of_opt instr) with
+                | Ssa.Store _, _ | Ssa.Call _, _ -> true
+                | _, Some d -> ValueSet.mem d liveness
+                | _, None -> false)
+              bb.bb_code
+          in
+          { bb with bb_phis; bb_code })
+        f.func_blocks
+    in
+    { f with func_blocks = new_blocks }
+
+  let dead_code_elim (p : Ssa.program) : Ssa.program =
+    { p with functions = List.map dce_func p.functions }
 end

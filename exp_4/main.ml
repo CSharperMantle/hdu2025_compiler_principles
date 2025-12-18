@@ -151,7 +151,9 @@ let opt_iongraph_file (filename : string) : unit =
   with_translated filename comp_unit @@ fun (_, program) ->
   let prog_1 = Ssa.build_ssa program Ssa.empty_build_ssa_context in
   let prog_2 = Opt.Const_prop.simple_const_prop prog_1 in
-  Ssa_dump.dump_ssa [ ("Build SSA", prog_1); ("Simple Const Prop", prog_2) ]
+  let prog_3 = Opt.Dead_code_elim.dead_code_elim prog_2 in
+  Ssa_dump.dump_ssa
+    [ ("Build SSA", prog_1); ("Simple Const Prop", prog_2); ("Dead Code Elim", prog_3) ]
   |> Yojson.Safe.to_string |> print_endline
 
 module StringMap = Map.Make (String)

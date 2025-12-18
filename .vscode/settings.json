@@ -16,7 +16,18 @@
         "lparen",
         "nonterminal",
         "nonterminals",
-        "Printexc"
+        "Printexc",
+        "yojson",
+        "semant",
+        "iongraph",
+        "ckpt",
+        "endline",
+        "alloca",
+        "lexbuf",
+        "RPAREN",
+        "LPAREN",
+        "instrs",
+        "worklist"
     ],
     "files.associations": {
         "*.sy": "plaintext"
