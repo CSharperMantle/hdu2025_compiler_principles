@@ -109,15 +109,13 @@ let generic_rewrite_uses_of_terminator (rewrite : Ssa.operand -> Ssa.operand * b
       (Ssa.Return (Some op'), changed)
   | Ssa.Jump _ -> (term, false)
 
-let generic_rewrite_uses_of_phi (resolve : Ssa.operand -> Ssa.operand) (phi : Ssa.phi) :
+let generic_rewrite_uses_of_phi (rewrite : Ssa.value -> Ssa.value * bool) (phi : Ssa.phi) :
     Ssa.phi * bool =
   let incoming', changed =
     IntMap.fold
       (fun bb_id v (acc, changed) ->
-        let resolved = resolve (Ssa.Value v) in
-        match resolved with
-        | Ssa.Value v' -> (IntMap.add bb_id v' acc, changed || v' <> v)
-        | _ -> (acc, changed))
+        let v', v_changed = rewrite v in
+        if v_changed then (IntMap.add bb_id v' acc, true) else (IntMap.add bb_id v acc, changed))
       phi.Ssa.phi_incoming (IntMap.empty, false)
   in
   ({ phi with phi_incoming = incoming' }, changed)
@@ -292,7 +290,7 @@ module Copy_prop = struct
         List.fold_left
           (fun acc instr ->
             match instr with
-            | Ssa.Move (d, src) -> ValueMap.add d src acc
+            | Ssa.Move (d, s) -> ValueMap.add d s acc
             | _ -> acc)
           map bb.Ssa.bb_code)
       f.Ssa.func_blocks ValueMap.empty
@@ -303,7 +301,7 @@ module Copy_prop = struct
         match ValueMap.find_opt v map with
         | Some resolved -> resolve_operand map resolved
         | None -> op)
-    | _ -> op
+    | Ssa.Const _ | Ssa.ConstFloat _ -> op
 
   let propagate_in_operand (map : Ssa.operand ValueMap.t) (op : Ssa.operand) : Ssa.operand * bool =
     let resolved = resolve_operand map op in
@@ -314,8 +312,24 @@ module Copy_prop = struct
     generic_rewrite_uses_of_instr prop instr
 
   let propagate_in_phi (map : Ssa.operand ValueMap.t) (phi : Ssa.phi) : Ssa.phi * bool =
-    let resolve = resolve_operand map in
-    generic_rewrite_uses_of_phi resolve phi
+    let rec find_root_value (op : Ssa.operand) : Ssa.operand option =
+      match op with
+      | Ssa.Value v -> (
+          match ValueMap.find_opt v map with
+          | Some op' -> (
+              match find_root_value op' with
+              | Some _ as result -> result
+              | None -> Some op)
+          | None -> Some op)
+      | Ssa.Const _ | Ssa.ConstFloat _ -> None
+    in
+    let rewrite (v : Ssa.value) : Ssa.value * bool =
+      match find_root_value (Ssa.Value v) with
+      | Some (Ssa.Value v') -> (v', v' <> v)
+      | Some _ -> internal_error "Non-value returned when rewriting Phi RHS"
+      | None -> (v, false)
+    in
+    generic_rewrite_uses_of_phi rewrite phi
 
   let propagate_in_terminator (map : Ssa.operand ValueMap.t) (term : Ssa.terminator) :
       Ssa.terminator * bool =
