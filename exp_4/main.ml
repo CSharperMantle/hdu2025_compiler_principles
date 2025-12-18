@@ -136,25 +136,47 @@ let ssa_iongraph_file (filename : string) : unit =
   let program = Ssa.build_ssa program Ssa.empty_build_ssa_context in
   Ssa_dump.dump_ssa [ ("Build SSA", program) ] |> Yojson.Safe.to_string |> print_endline
 
+let opt_pipe (initial : string * Ssa.program)
+    (passes : (string * (Ssa.program -> Ssa.program)) list) : (string * Ssa.program) list =
+  let progs =
+    List.fold_left
+      (fun (prog, acc) pass ->
+        let prog' = (snd pass) prog in
+        (prog', (fst pass, prog') :: acc))
+      (snd initial, [])
+      passes
+  in
+  initial :: List.rev (snd progs)
+
 let opt_file (filename : string) : unit =
   with_lexed filename @@ fun lexbuf ->
   with_parsed filename lexbuf @@ fun comp_unit ->
   with_translated filename comp_unit @@ fun (_, program) ->
-  let program =
-    Ssa.build_ssa program Ssa.empty_build_ssa_context |> Opt.Const_prop.simple_const_prop
+  let program = Ssa.build_ssa program Ssa.empty_build_ssa_context in
+  let passes =
+    opt_pipe ("Build SSA", program)
+      [
+        ("Simple Const Prop", Opt.Const_prop.simple_const_prop);
+        ("Copy Prop", Opt.Copy_prop.copy_prop);
+        ("Dead Code Elim", Opt.Dead_code_elim.dead_code_elim);
+      ]
   in
-  Ssa.prettify_program program |> print_endline
+  Ssa.prettify_program (List.rev passes |> List.hd |> snd) |> print_endline
 
 let opt_iongraph_file (filename : string) : unit =
   with_lexed filename @@ fun lexbuf ->
   with_parsed filename lexbuf @@ fun comp_unit ->
   with_translated filename comp_unit @@ fun (_, program) ->
-  let prog_1 = Ssa.build_ssa program Ssa.empty_build_ssa_context in
-  let prog_2 = Opt.Const_prop.simple_const_prop prog_1 in
-  let prog_3 = Opt.Dead_code_elim.dead_code_elim prog_2 in
-  Ssa_dump.dump_ssa
-    [ ("Build SSA", prog_1); ("Simple Const Prop", prog_2); ("Dead Code Elim", prog_3) ]
-  |> Yojson.Safe.to_string |> print_endline
+  let program = Ssa.build_ssa program Ssa.empty_build_ssa_context in
+  let passes =
+    opt_pipe ("Build SSA", program)
+      [
+        ("Simple Const Prop", Opt.Const_prop.simple_const_prop);
+        ("Copy Prop", Opt.Copy_prop.copy_prop);
+        ("Dead Code Elim", Opt.Dead_code_elim.dead_code_elim);
+      ]
+  in
+  Ssa_dump.dump_ssa passes |> Yojson.Safe.to_string |> print_endline
 
 module StringMap = Map.Make (String)
 
