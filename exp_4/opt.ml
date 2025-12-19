@@ -14,16 +14,16 @@ end)
 
 let def_value_of_opt (instr : Ssa.instr) : Ssa.value option =
   match instr with
-  | BinOp (d, _, _, _)
-  | FBinOp (d, _, _, _)
-  | UnaryOp (d, _, _)
-  | FUnaryOp (d, _, _)
-  | Move (d, _)
-  | Itf (d, _)
-  | Fti (d, _)
-  | Call (d, _, _)
-  | Alloca (d, _)
-  | Load (d, _, _) -> Some d
+  | BinOp (_, d, _, _, _)
+  | FBinOp (_, d, _, _, _)
+  | UnaryOp (_, d, _, _)
+  | FUnaryOp (_, d, _, _)
+  | Move (_, d, _)
+  | Itf (_, d, _)
+  | Fti (_, d, _)
+  | Call (_, d, _, _)
+  | Alloca (_, d, _)
+  | Load (_, d, _, _) -> Some d
   | Store _ -> None
 
 let uses_of_operand (op : Ssa.operand) : Ssa.value list =
@@ -38,22 +38,22 @@ let uses_of_mem (m : Ssa.mem_loc) : Ssa.value list =
 
 let uses_of_instr (instr : Ssa.instr) : Ssa.value list =
   match instr with
-  | BinOp (_, _, s1, s2) | FBinOp (_, _, s1, s2) -> uses_of_operand s1 @ uses_of_operand s2
-  | UnaryOp (_, _, s) | FUnaryOp (_, _, s) | Move (_, s) | Itf (_, s) | Fti (_, s) ->
+  | BinOp (_, _, _, s1, s2) | FBinOp (_, _, _, s1, s2) -> uses_of_operand s1 @ uses_of_operand s2
+  | UnaryOp (_, _, _, s) | FUnaryOp (_, _, _, s) | Move (_, _, s) | Itf (_, _, s) | Fti (_, _, s) ->
       uses_of_operand s
-  | Call (_, _, args) -> List.map uses_of_operand args |> List.concat
+  | Call (_, _, _, args) -> List.map uses_of_operand args |> List.concat
   | Alloca _ -> []
-  | Load (_, m, indices) -> uses_of_mem m @ (List.map uses_of_operand indices |> List.concat)
-  | Store (m, indices, s) ->
+  | Load (_, _, m, indices) -> uses_of_mem m @ (List.map uses_of_operand indices |> List.concat)
+  | Store (_, m, indices, s) ->
       uses_of_mem m @ (List.map uses_of_operand indices |> List.concat) @ uses_of_operand s
 
 let uses_of_phi (phi : Ssa.phi) : Ssa.value list = IntMap.bindings phi.phi_incoming |> List.map snd
 
 let uses_of_terminator (term : Ssa.terminator) : Ssa.value list =
   match term with
-  | Br (cond, _, _) -> uses_of_operand cond
-  | Return (Some op) -> uses_of_operand op
-  | Return None | Jump _ -> []
+  | Br (_, cond, _, _) -> uses_of_operand cond
+  | Return (_, Some op) -> uses_of_operand op
+  | Return (_, None) | Jump _ -> []
 
 (*
   Generic function for rewriting all uses in a instruction.
@@ -64,49 +64,49 @@ let uses_of_terminator (term : Ssa.terminator) : Ssa.value list =
 let generic_rewrite_uses_of_instr (rewrite : Ssa.operand -> Ssa.operand * bool) (instr : Ssa.instr)
     : Ssa.instr * bool =
   match instr with
-  | Ssa.BinOp (d, op, s1, s2) ->
+  | Ssa.BinOp (id, d, op, s1, s2) ->
       let s1', c1 = rewrite s1 and s2', c2 = rewrite s2 in
-      (Ssa.BinOp (d, op, s1', s2'), c1 || c2)
-  | Ssa.FBinOp (d, op, s1, s2) ->
+      (Ssa.BinOp (id, d, op, s1', s2'), c1 || c2)
+  | Ssa.FBinOp (id, d, op, s1, s2) ->
       let s1', c1 = rewrite s1 and s2', c2 = rewrite s2 in
-      (Ssa.FBinOp (d, op, s1', s2'), c1 || c2)
-  | Ssa.UnaryOp (d, op, s) ->
+      (Ssa.FBinOp (id, d, op, s1', s2'), c1 || c2)
+  | Ssa.UnaryOp (id, d, op, s) ->
       let s', c = rewrite s in
-      (Ssa.UnaryOp (d, op, s'), c)
-  | Ssa.FUnaryOp (d, op, s) ->
+      (Ssa.UnaryOp (id, d, op, s'), c)
+  | Ssa.FUnaryOp (id, d, op, s) ->
       let s', c = rewrite s in
-      (Ssa.FUnaryOp (d, op, s'), c)
-  | Ssa.Move (d, s) ->
+      (Ssa.FUnaryOp (id, d, op, s'), c)
+  | Ssa.Move (id, d, s) ->
       let s', c = rewrite s in
-      (Ssa.Move (d, s'), c)
-  | Ssa.Itf (d, s) ->
+      (Ssa.Move (id, d, s'), c)
+  | Ssa.Itf (id, d, s) ->
       let s', c = rewrite s in
-      (Ssa.Itf (d, s'), c)
-  | Ssa.Fti (d, s) ->
+      (Ssa.Itf (id, d, s'), c)
+  | Ssa.Fti (id, d, s) ->
       let s', c = rewrite s in
-      (Ssa.Fti (d, s'), c)
-  | Ssa.Call (d, f, args) ->
+      (Ssa.Fti (id, d, s'), c)
+  | Ssa.Call (id, d, f, args) ->
       let args', changes = List.split (List.map rewrite args) in
-      (Ssa.Call (d, f, args'), List.exists Fun.id changes)
-  | Ssa.Load (d, mem, indices) ->
+      (Ssa.Call (id, d, f, args'), List.exists Fun.id changes)
+  | Ssa.Load (id, d, mem, indices) ->
       let indices', changes = List.split (List.map rewrite indices) in
-      (Ssa.Load (d, mem, indices'), List.exists Fun.id changes)
-  | Ssa.Store (mem, indices, src) ->
+      (Ssa.Load (id, d, mem, indices'), List.exists Fun.id changes)
+  | Ssa.Store (id, mem, indices, src) ->
       let indices', changes1 = List.split (List.map rewrite indices) in
       let src', c2 = rewrite src in
-      (Ssa.Store (mem, indices', src'), List.exists Fun.id changes1 || c2)
+      (Ssa.Store (id, mem, indices', src'), List.exists Fun.id changes1 || c2)
   | Ssa.Alloca _ -> (instr, false)
 
 let generic_rewrite_uses_of_terminator (rewrite : Ssa.operand -> Ssa.operand * bool)
     (term : Ssa.terminator) : Ssa.terminator * bool =
   match term with
-  | Ssa.Br (cond, t, f) ->
+  | Ssa.Br (id, cond, t, f) ->
       let cond', changed = rewrite cond in
-      (Ssa.Br (cond', t, f), changed)
-  | Ssa.Return None -> (term, false)
-  | Ssa.Return (Some op) ->
+      (Ssa.Br (id, cond', t, f), changed)
+  | Ssa.Return (_, None) -> (term, false)
+  | Ssa.Return (id, Some op) ->
       let op', changed = rewrite op in
-      (Ssa.Return (Some op'), changed)
+      (Ssa.Return (id, Some op'), changed)
   | Ssa.Jump _ -> (term, false)
 
 let generic_rewrite_uses_of_phi (rewrite : Ssa.value -> Ssa.value * bool) (phi : Ssa.phi) :
@@ -173,28 +173,28 @@ module Const_prop = struct
   let collect_const_from_instr (map : const_val ValueMap.t) (instr : Ssa.instr) :
       const_val ValueMap.t =
     match instr with
-    | Ssa.Move (d, s) -> get_const s map |> map_or_default (fun c -> ValueMap.add d c map) map
-    | Ssa.BinOp (d, op, s1, s2) -> (
+    | Ssa.Move (_, d, s) -> get_const s map |> map_or_default (fun c -> ValueMap.add d c map) map
+    | Ssa.BinOp (_, d, op, s1, s2) -> (
         match (get_const s1 map, get_const s2 map) with
         | Some c1, Some c2 ->
             eval_bin_op op c1 c2 |> map_or_default (fun res -> ValueMap.add d res map) map
         | _ -> map)
-    | Ssa.FBinOp (d, op, s1, s2) -> (
+    | Ssa.FBinOp (_, d, op, s1, s2) -> (
         match (get_const s1 map, get_const s2 map) with
         | Some c1, Some c2 ->
             eval_bin_op op c1 c2 |> map_or_default (fun res -> ValueMap.add d res map) map
         | _ -> map)
-    | Ssa.UnaryOp (d, op, s) ->
+    | Ssa.UnaryOp (_, d, op, s) ->
         get_const s map
         |> map_or_default
              (fun c -> eval_unary_op op c |> map_or_default (fun res -> ValueMap.add d res map) map)
              map
-    | Ssa.FUnaryOp (d, op, s) ->
+    | Ssa.FUnaryOp (_, d, op, s) ->
         get_const s map
         |> map_or_default
              (fun c -> eval_unary_op op c |> map_or_default (fun res -> ValueMap.add d res map) map)
              map
-    | Ssa.Itf (d, s) ->
+    | Ssa.Itf (_, d, s) ->
         get_const s map
         |> map_or_default
              (fun c ->
@@ -202,7 +202,7 @@ module Const_prop = struct
                | CInt i -> ValueMap.add d (CFloat (float_of_int i)) map
                | _ -> map)
              map
-    | Ssa.Fti (d, s) ->
+    | Ssa.Fti (_, d, s) ->
         get_const s map
         |> map_or_default
              (fun c ->
@@ -250,9 +250,13 @@ module Const_prop = struct
                 (fun c ->
                   let const_op = operand_of c in
                   match instr with
-                  | Move (_, src) when src = const_op -> (instr, changed1)
-                  | BinOp _ | FBinOp _ | UnaryOp _ | FUnaryOp _ | Itf _ | Fti _ ->
-                      (Move (v, const_op), true)
+                  | Move (_, _, src) when src = const_op -> (instr, changed1)
+                  | BinOp (id, d, _, _, _)
+                  | FBinOp (id, d, _, _, _)
+                  | UnaryOp (id, d, _, _)
+                  | FUnaryOp (id, d, _, _)
+                  | Itf (id, d, _)
+                  | Fti (id, d, _) -> (Move (id, d, const_op), true)
                   | _ -> (instr, changed1))
                 (instr, changed1))
          (instr, changed1)
@@ -290,7 +294,7 @@ module Copy_prop = struct
         List.fold_left
           (fun acc instr ->
             match instr with
-            | Ssa.Move (d, s) -> ValueMap.add d s acc
+            | Ssa.Move (_, d, s) -> ValueMap.add d s acc
             | _ -> acc)
           map bb.Ssa.bb_code)
       f.Ssa.func_blocks ValueMap.empty

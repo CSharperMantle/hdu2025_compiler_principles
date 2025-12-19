@@ -24,8 +24,9 @@ let prettify_operand = function
   | ConstFloat v -> string_of_float v
 
 type phi = {
+  phi_id : int;
   phi_dest : value;
-  phi_incoming : value IntMap.t; (* Mapping from BB id to incoming value *)
+  phi_incoming : value IntMap.t;
 }
 
 let prettify_phi (v : phi) : string =
@@ -47,92 +48,96 @@ let prettify_mem_loc = function
   | GlobalArray id -> Printf.sprintf "@%d" id
 
 type instr =
-  | BinOp of value * Ast.bin_op * operand * operand
-  | FBinOp of value * Ast.bin_op * operand * operand
-  | UnaryOp of value * Ast.unary_op * operand
-  | FUnaryOp of value * Ast.unary_op * operand
-  | Move of value * operand
-  | Itf of value * operand
-  | Fti of value * operand
-  | Call of value * int * operand list
-  | Alloca of value * int
-  | Load of value * mem_loc * operand list
-  | Store of mem_loc * operand list * operand
+  | BinOp of int * value * Ast.bin_op * operand * operand
+  | FBinOp of int * value * Ast.bin_op * operand * operand
+  | UnaryOp of int * value * Ast.unary_op * operand
+  | FUnaryOp of int * value * Ast.unary_op * operand
+  | Move of int * value * operand
+  | Itf of int * value * operand
+  | Fti of int * value * operand
+  | Call of int * value * int * operand list
+  | Alloca of int * value * int
+  | Load of int * value * mem_loc * operand list
+  | Store of int * mem_loc * operand list * operand
 
-let instr_of_tac_instr_opt = function
+let instr_of_tac_instr_opt (id : int) (instr : Tac.tac_instr) : instr option =
+  match instr with
   | Tac.BinOp (d, op, s1, s2) ->
-      Some (BinOp (new_value d, op, operand_of_tac_operand s1, operand_of_tac_operand s2))
+      Some (BinOp (id, new_value d, op, operand_of_tac_operand s1, operand_of_tac_operand s2))
   | Tac.FBinOp (d, op, s1, s2) ->
-      Some (FBinOp (new_value d, op, operand_of_tac_operand s1, operand_of_tac_operand s2))
-  | Tac.UnaryOp (d, op, s) -> Some (UnaryOp (new_value d, op, operand_of_tac_operand s))
-  | Tac.FUnaryOp (d, op, s) -> Some (FUnaryOp (new_value d, op, operand_of_tac_operand s))
-  | Tac.Move (d, s) -> Some (Move (new_value d, operand_of_tac_operand s))
-  | Tac.Itf (d, s) -> Some (Itf (new_value d, operand_of_tac_operand s))
-  | Tac.Fti (d, s) -> Some (Fti (new_value d, operand_of_tac_operand s))
-  | Tac.Call (d, f, args) -> Some (Call (new_value d, f, List.map operand_of_tac_operand args))
-  | Tac.Alloca (d, size) -> Some (Alloca (new_value d, size))
+      Some (FBinOp (id, new_value d, op, operand_of_tac_operand s1, operand_of_tac_operand s2))
+  | Tac.UnaryOp (d, op, s) -> Some (UnaryOp (id, new_value d, op, operand_of_tac_operand s))
+  | Tac.FUnaryOp (d, op, s) -> Some (FUnaryOp (id, new_value d, op, operand_of_tac_operand s))
+  | Tac.Move (d, s) -> Some (Move (id, new_value d, operand_of_tac_operand s))
+  | Tac.Itf (d, s) -> Some (Itf (id, new_value d, operand_of_tac_operand s))
+  | Tac.Fti (d, s) -> Some (Fti (id, new_value d, operand_of_tac_operand s))
+  | Tac.Call (d, f, args) -> Some (Call (id, new_value d, f, List.map operand_of_tac_operand args))
+  | Tac.Alloca (d, size) -> Some (Alloca (id, new_value d, size))
   | Tac.Load (d, b, _, indices) ->
       let mem =
         match b with
         | Tac.LocalScalar _ -> internal_error "Local scalar should not require Load"
-        | Tac.LocalArray id -> LocalArray (new_value id) (* id is the alloca'd pointer *)
-        | Tac.GlobalScalar id -> GlobalScalar id
-        | Tac.GlobalArray id -> GlobalArray id
+        | Tac.LocalArray vid -> LocalArray (new_value vid)
+        | Tac.GlobalScalar vid -> GlobalScalar vid
+        | Tac.GlobalArray vid -> GlobalArray vid
       in
-      Some (Load (new_value d, mem, List.map operand_of_tac_operand indices))
+      Some (Load (id, new_value d, mem, List.map operand_of_tac_operand indices))
   | Tac.Store (d, _, s, indices) ->
       let mem =
         match d with
-        | Tac.LocalArray id -> LocalArray (new_value id)
-        | Tac.GlobalScalar id -> GlobalScalar id
-        | Tac.GlobalArray id -> GlobalArray id
+        | Tac.LocalArray vid -> LocalArray (new_value vid)
+        | Tac.GlobalScalar vid -> GlobalScalar vid
+        | Tac.GlobalArray vid -> GlobalArray vid
         | Tac.LocalScalar _ -> internal_error "Local scalar in memory"
       in
-      Some (Store (mem, List.map operand_of_tac_operand indices, operand_of_tac_operand s))
+      Some (Store (id, mem, List.map operand_of_tac_operand indices, operand_of_tac_operand s))
   | Tac.Label _ | Tac.Jump _ | Tac.Br _ | Tac.Return _ -> None
 
 let prettify_instr = function
-  | BinOp (dest, op, src1, src2) ->
+  | BinOp (_, dest, op, src1, src2) ->
       Printf.sprintf "%s.i\t(%s, %s, %s)" (Ast.string_of_bin_op op) (prettify_value dest)
         (prettify_operand src1) (prettify_operand src2)
-  | FBinOp (dest, op, src1, src2) ->
+  | FBinOp (_, dest, op, src1, src2) ->
       Printf.sprintf "%s.f\t(%s, %s, %s)" (Ast.string_of_bin_op op) (prettify_value dest)
         (prettify_operand src1) (prettify_operand src2)
-  | UnaryOp (dest, op, src) ->
+  | UnaryOp (_, dest, op, src) ->
       Printf.sprintf "%s.i\t(%s, %s)" (Ast.string_of_unary_op op) (prettify_value dest)
         (prettify_operand src)
-  | FUnaryOp (dest, op, src) ->
+  | FUnaryOp (_, dest, op, src) ->
       Printf.sprintf "%s.f\t(%s, %s)" (Ast.string_of_unary_op op) (prettify_value dest)
         (prettify_operand src)
-  | Move (dest, src) -> Printf.sprintf "Move\t(%s, %s)" (prettify_value dest) (prettify_operand src)
-  | Itf (dest, src) -> Printf.sprintf "Itf\t(%s, %s)" (prettify_value dest) (prettify_operand src)
-  | Fti (dest, src) -> Printf.sprintf "Fti\t(%s, %s)" (prettify_value dest) (prettify_operand src)
-  | Call (dest, func_id, args) ->
+  | Move (_, dest, src) ->
+      Printf.sprintf "Move\t(%s, %s)" (prettify_value dest) (prettify_operand src)
+  | Itf (_, dest, src) ->
+      Printf.sprintf "Itf\t(%s, %s)" (prettify_value dest) (prettify_operand src)
+  | Fti (_, dest, src) ->
+      Printf.sprintf "Fti\t(%s, %s)" (prettify_value dest) (prettify_operand src)
+  | Call (_, dest, func_id, args) ->
       let args_str = List.map prettify_operand args |> String.concat ", " in
       if args = [] then Printf.sprintf "Call\t(%s, $%d)" (prettify_value dest) func_id
       else Printf.sprintf "Call\t(%s, $%d, [%s])" (prettify_value dest) func_id args_str
-  | Alloca (dest, size) -> Printf.sprintf "Alloca\t(%s, %d)" (prettify_value dest) size
-  | Load (dest, base, indices) ->
+  | Alloca (_, dest, size) -> Printf.sprintf "Alloca\t(%s, %d)" (prettify_value dest) size
+  | Load (_, dest, base, indices) ->
       let indices_str = List.map prettify_operand indices |> String.concat "][" in
       Printf.sprintf "Load\t(%s, %s, [%s])" (prettify_value dest) (prettify_mem_loc base)
         indices_str
-  | Store (base, indices, src) ->
+  | Store (_, base, indices, src) ->
       let indices_str = List.map prettify_operand indices |> String.concat "][" in
       Printf.sprintf "Store\t(%s, [%s], %s)" (prettify_mem_loc base) indices_str
         (prettify_operand src)
 
 type terminator =
-  | Jump of int (* Jump to BB %0 *)
-  | Br of operand * int * int (* If %0 is truthy, then go to BB %1, otherwise BB %2 *)
-  | Return of operand option
+  | Jump of int * int
+  | Br of int * operand * int * int
+  | Return of int * operand option
 
 let prettify_terminator = function
-  | Jump bb -> Printf.sprintf "Jump\t(%s)" (prettify_basic_block_id bb)
-  | Br (cond, bb_truthy, bb_falsy) ->
+  | Jump (_, bb) -> Printf.sprintf "Jump\t(%s)" (prettify_basic_block_id bb)
+  | Br (_, cond, bb_truthy, bb_falsy) ->
       Printf.sprintf "Br\t(%s, %s, %s)" (prettify_operand cond)
         (prettify_basic_block_id bb_truthy)
         (prettify_basic_block_id bb_falsy)
-  | Return retval -> Printf.sprintf "Return\t(%s)" (map_or_default prettify_operand "" retval)
+  | Return (_, retval) -> Printf.sprintf "Return\t(%s)" (map_or_default prettify_operand "" retval)
 
 type basic_block = {
   bb_id : int;
@@ -195,6 +200,8 @@ type program = {
   global_init : Tac.tac_init IntMap.t;
   functions : func list;
   objects : Tac.tac_obj_type IntMap.t;
+  next_instr_id : int;
+  next_bb_id : int;
   loop_headers : IntSet.t;
   back_edges : IntSet.t;
   back_edge_list : (int * int) list;
@@ -222,6 +229,7 @@ let prettify_program (p : program) : string =
 *)
 type build_ssa_context = {
   next_bb_id : int;
+  next_instr_id : int;
   successors : IntSet.t IntMap.t;
   predecessors : IntSet.t IntMap.t;
   dom_frontier : IntSet.t IntMap.t;
@@ -236,9 +244,13 @@ type build_ssa_context = {
 let alloc_bb_id (ctx : build_ssa_context) : int * build_ssa_context =
   (ctx.next_bb_id, { ctx with next_bb_id = ctx.next_bb_id + 1 })
 
+let alloc_instr_id (ctx : build_ssa_context) : int * build_ssa_context =
+  (ctx.next_instr_id, { ctx with next_instr_id = ctx.next_instr_id + 1 })
+
 let empty_build_ssa_context : build_ssa_context =
   {
     next_bb_id = 0;
+    next_instr_id = 0;
     successors = IntMap.empty;
     predecessors = IntMap.empty;
     dom_frontier = IntMap.empty;
@@ -287,35 +299,55 @@ let build_func_cfg (tac_func : Tac.tac_function) (ctx : build_ssa_context) :
     | Some v -> v
     | None -> internal_error "Label not found"
   in
-  let convert_block pb next_pb_opt =
-    let bb_code = List.filter_map instr_of_tac_instr_opt pb.code in
-    let bb_term =
+  let convert_block pb next_pb_opt ctx =
+    let bb_code', ctx =
+      List.fold_left
+        (fun (code, ctx) instr ->
+          let id, ctx' = alloc_instr_id ctx in
+          match instr_of_tac_instr_opt id instr with
+          | Some instr -> (instr :: code, ctx')
+          | None -> (code, ctx))
+        ([], ctx) pb.code
+    in
+    let bb_code = List.rev bb_code' in
+    let bb_term, ctx =
       match pb.term with
-      | Some (Tac.Jump l) -> Jump (find_bb_id l labels)
+      | Some (Tac.Jump l) ->
+          let id, ctx = alloc_instr_id ctx in
+          (Jump (id, find_bb_id l labels), ctx)
       | Some (Tac.Br (cond, l)) ->
+          let id, ctx = alloc_instr_id ctx in
           let true_target = find_bb_id l labels in
           let false_target =
             match next_pb_opt with
             | Some next -> next.id
             | None -> -1
           in
-          Br (operand_of_tac_operand cond, true_target, false_target)
-      | Some (Tac.Return op) -> Return (Option.map operand_of_tac_operand op)
+          (Br (id, operand_of_tac_operand cond, true_target, false_target), ctx)
+      | Some (Tac.Return op) ->
+          let id, ctx = alloc_instr_id ctx in
+          (Return (id, Option.map operand_of_tac_operand op), ctx)
       | None -> (
+          let id, ctx = alloc_instr_id ctx in
           match next_pb_opt with
-          | Some next -> Jump next.id
-          | None -> Return None)
+          | Some next -> (Jump (id, next.id), ctx)
+          | None -> (Return (id, None), ctx))
       | _ -> internal_error "Invalid terminator"
     in
-    { bb_id = pb.id; bb_phis = []; bb_code; bb_term }
+    ({ bb_id = pb.id; bb_phis = []; bb_code; bb_term }, ctx)
   in
-  let rec process_blocks pbs =
+  let rec process_blocks pbs ctx =
     match pbs with
-    | [] -> []
-    | [ pb ] -> [ convert_block pb None ]
-    | pb :: next :: rest -> convert_block pb (Some next) :: process_blocks (next :: rest)
+    | [] -> ([], ctx)
+    | [ pb ] ->
+        let bb, ctx = convert_block pb None ctx in
+        ([ bb ], ctx)
+    | pb :: next :: rest ->
+        let bb, ctx = convert_block pb (Some next) ctx in
+        let rest_bbs, ctx = process_blocks (next :: rest) ctx in
+        (bb :: rest_bbs, ctx)
   in
-  let bbs = process_blocks pbs in
+  let bbs, ctx = process_blocks pbs ctx in
   let func_blocks = List.to_seq bbs |> Seq.map (fun bb -> (bb.bb_id, bb)) |> IntMap.of_seq in
 
   (* Calculate successors from terminators *)
@@ -324,8 +356,8 @@ let build_func_cfg (tac_func : Tac.tac_function) (ctx : build_ssa_context) :
       (fun acc bb ->
         let succs =
           match bb.bb_term with
-          | Jump target -> IntSet.singleton target
-          | Br (_, true_target, false_target) -> IntSet.of_list [ true_target; false_target ]
+          | Jump (_, target) -> IntSet.singleton target
+          | Br (_, _, true_target, false_target) -> IntSet.of_list [ true_target; false_target ]
           | Return _ -> IntSet.empty
         in
         IntMap.add bb.bb_id succs acc)
@@ -373,6 +405,8 @@ let build_cfg (program : Tac.tac_program) (ctx : build_ssa_context) : program * 
       global_init = program.global_init;
       functions = List.rev functions;
       objects = program.objects;
+      next_instr_id = ctx.next_instr_id;
+      next_bb_id = ctx.next_bb_id;
       loop_headers = IntSet.empty;
       back_edges = IntSet.empty;
       back_edge_list = [];
@@ -382,16 +416,16 @@ let build_cfg (program : Tac.tac_program) (ctx : build_ssa_context) : program * 
   (program, ctx)
 
 let def_id_of = function
-  | BinOp ((id, _), _, _, _)
-  | FBinOp ((id, _), _, _, _)
-  | UnaryOp ((id, _), _, _)
-  | FUnaryOp ((id, _), _, _)
-  | Move ((id, _), _)
-  | Itf ((id, _), _)
-  | Fti ((id, _), _)
-  | Call ((id, _), _, _)
-  | Alloca ((id, _), _)
-  | Load ((id, _), _, _) -> Some id
+  | BinOp (_, (id, _), _, _, _)
+  | FBinOp (_, (id, _), _, _, _)
+  | UnaryOp (_, (id, _), _, _)
+  | FUnaryOp (_, (id, _), _, _)
+  | Move (_, (id, _), _)
+  | Itf (_, (id, _), _)
+  | Fti (_, (id, _), _)
+  | Call (_, (id, _), _, _)
+  | Alloca (_, (id, _), _)
+  | Load (_, (id, _), _, _) -> Some id
   | Store _ -> None
 
 type lt_state = {
@@ -682,23 +716,28 @@ let insert_phi (func : func) (ctx : build_ssa_context) : func * build_ssa_contex
         IntSet.fold (fun bb_id acc -> prepend_int_or_singleton_list bb_id a acc) phi_blocks acc)
       def_sites IntMap.empty
   in
-  let func_blocks =
-    IntMap.mapi
-      (fun bb_id bb ->
+  let func_blocks, ctx =
+    IntMap.fold
+      (fun bb_id bb (blocks, ctx) ->
         let vars = IntMap.find_opt bb_id phis_to_add |> or_default []
         and preds = IntMap.find_opt bb_id ctx.predecessors |> or_default IntSet.empty in
-        let new_phis =
-          List.map
-            (fun var_id ->
-              {
-                phi_dest = new_value var_id;
-                phi_incoming =
-                  IntSet.to_seq preds |> Seq.map (fun p -> (p, new_value var_id)) |> IntMap.of_seq;
-              })
-            vars
+        let new_phis, ctx =
+          List.fold_left
+            (fun (phis, ctx) var_id ->
+              let phi_id, ctx = alloc_instr_id ctx in
+              let phi =
+                {
+                  phi_id;
+                  phi_dest = new_value var_id;
+                  phi_incoming =
+                    IntSet.to_seq preds |> Seq.map (fun p -> (p, new_value var_id)) |> IntMap.of_seq;
+                }
+              in
+              (phi :: phis, ctx))
+            ([], ctx) vars
         in
-        { bb with bb_phis = bb.bb_phis @ new_phis })
-      func.func_blocks
+        (IntMap.add bb_id { bb with bb_phis = bb.bb_phis @ List.rev new_phis } blocks, ctx))
+      func.func_blocks (IntMap.empty, ctx)
   in
   ({ func with func_blocks }, ctx)
 
@@ -737,47 +776,52 @@ let bump_version_for (id : int) (rctx : rename_value_context) : int * rename_val
   (v', { counts; stacks })
 
 let rewrite_instr_def_into (new_def : value) = function
-  | BinOp (_, op, s1, s2) -> BinOp (new_def, op, s1, s2)
-  | FBinOp (_, op, s1, s2) -> FBinOp (new_def, op, s1, s2)
-  | UnaryOp (_, op, s) -> UnaryOp (new_def, op, s)
-  | FUnaryOp (_, op, s) -> FUnaryOp (new_def, op, s)
-  | Move (_, s) -> Move (new_def, s)
-  | Itf (_, s) -> Itf (new_def, s)
-  | Fti (_, s) -> Fti (new_def, s)
-  | Call (_, f, args) -> Call (new_def, f, args)
-  | Alloca (_, count) -> Alloca (new_def, count)
-  | Load (_, b, indices) -> Load (new_def, b, indices)
+  | BinOp (id, _, op, s1, s2) -> BinOp (id, new_def, op, s1, s2)
+  | FBinOp (id, _, op, s1, s2) -> FBinOp (id, new_def, op, s1, s2)
+  | UnaryOp (id, _, op, s) -> UnaryOp (id, new_def, op, s)
+  | FUnaryOp (id, _, op, s) -> FUnaryOp (id, new_def, op, s)
+  | Move (id, _, s) -> Move (id, new_def, s)
+  | Itf (id, _, s) -> Itf (id, new_def, s)
+  | Fti (id, _, s) -> Fti (id, new_def, s)
+  | Call (id, _, f, args) -> Call (id, new_def, f, args)
+  | Alloca (id, _, count) -> Alloca (id, new_def, count)
+  | Load (id, _, b, indices) -> Load (id, new_def, b, indices)
   | Store _ as instr -> instr
 
 let rewrite_instr_uses (rctx : rename_value_context) = function
-  | BinOp (d, op, s1, s2) -> BinOp (d, op, versioned_operand s1 rctx, versioned_operand s2 rctx)
-  | FBinOp (d, op, s1, s2) -> FBinOp (d, op, versioned_operand s1 rctx, versioned_operand s2 rctx)
-  | UnaryOp (d, op, s) -> UnaryOp (d, op, versioned_operand s rctx)
-  | FUnaryOp (d, op, s) -> FUnaryOp (d, op, versioned_operand s rctx)
-  | Move (d, s) -> Move (d, versioned_operand s rctx)
-  | Itf (d, s) -> Itf (d, versioned_operand s rctx)
-  | Fti (d, s) -> Fti (d, versioned_operand s rctx)
-  | Call (d, f, args) -> Call (d, f, List.map (fun a -> versioned_operand a rctx) args)
+  | BinOp (id, d, op, s1, s2) ->
+      BinOp (id, d, op, versioned_operand s1 rctx, versioned_operand s2 rctx)
+  | FBinOp (id, d, op, s1, s2) ->
+      FBinOp (id, d, op, versioned_operand s1 rctx, versioned_operand s2 rctx)
+  | UnaryOp (id, d, op, s) -> UnaryOp (id, d, op, versioned_operand s rctx)
+  | FUnaryOp (id, d, op, s) -> FUnaryOp (id, d, op, versioned_operand s rctx)
+  | Move (id, d, s) -> Move (id, d, versioned_operand s rctx)
+  | Itf (id, d, s) -> Itf (id, d, versioned_operand s rctx)
+  | Fti (id, d, s) -> Fti (id, d, versioned_operand s rctx)
+  | Call (id, d, f, args) -> Call (id, d, f, List.map (fun a -> versioned_operand a rctx) args)
   | Alloca _ as instr -> instr
-  | Load (d, mem, indices) ->
+  | Load (id, d, mem, indices) ->
       let mem =
         match mem with
         | LocalArray v -> LocalArray (versioned_value v rctx)
         | _ -> mem
       in
-      Load (d, mem, List.map (fun idx -> versioned_operand idx rctx) indices)
-  | Store (mem, indices, src) ->
+      Load (id, d, mem, List.map (fun idx -> versioned_operand idx rctx) indices)
+  | Store (id, mem, indices, src) ->
       let mem =
         match mem with
         | LocalArray v -> LocalArray (versioned_value v rctx)
         | _ -> mem
       in
       Store
-        (mem, List.map (fun idx -> versioned_operand idx rctx) indices, versioned_operand src rctx)
+        ( id,
+          mem,
+          List.map (fun idx -> versioned_operand idx rctx) indices,
+          versioned_operand src rctx )
 
 let rewrite_terminator_uses (rctx : rename_value_context) = function
-  | Br (cond, t, f) -> Br (versioned_operand cond rctx, t, f)
-  | Return (Some op) -> Return (Some (versioned_operand op rctx))
+  | Br (id, cond, t, f) -> Br (id, versioned_operand cond rctx, t, f)
+  | Return (id, Some op) -> Return (id, Some (versioned_operand op rctx))
   | t -> t
 
 (* Algorithm 19.7, "Modern Compiler Implementation in C", Appel. *)
