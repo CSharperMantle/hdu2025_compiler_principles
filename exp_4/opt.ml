@@ -454,3 +454,15 @@ module Dead_code_elim = struct
   let dead_code_elim (p : Ssa.program) : Ssa.program =
     { p with functions = List.map dce_func p.functions }
 end
+
+let opt_pipe (initial : string * Ssa.program)
+    (passes : (string * (Ssa.program -> Ssa.program)) list) : (string * Ssa.program) list =
+  let progs =
+    List.fold_left
+      (fun (prog, acc) pass ->
+        let prog' = (snd pass) prog in
+        (prog', (fst pass, prog') :: acc))
+      (snd initial, [])
+      passes
+  in
+  initial :: List.rev (snd progs)

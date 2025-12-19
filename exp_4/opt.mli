@@ -9,3 +9,8 @@ end
 module Dead_code_elim : sig
   val dead_code_elim : Ssa.program -> Ssa.program
 end
+
+val opt_pipe :
+  string * Ssa.program ->
+  (string * (Ssa.program -> Ssa.program)) list ->
+  (string * Ssa.program) list
