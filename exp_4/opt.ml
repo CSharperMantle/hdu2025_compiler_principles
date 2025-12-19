@@ -374,8 +374,79 @@ module Dead_code_elim = struct
     | DefPhi of Ssa.phi
     | DefParam
 
+  let is_const_truthy (op : Ssa.operand) : bool =
+    match op with
+    | Ssa.Const v -> v <> 0
+    | Ssa.ConstFloat v -> v <> 0.0
+    | Ssa.Value _ -> false
+
+  let is_const_falsy (op : Ssa.operand) : bool =
+    match op with
+    | Ssa.Const v -> v = 0
+    | Ssa.ConstFloat v -> v = 0.0
+    | Ssa.Value _ -> false
+
+  let elide_branches (f : Ssa.func) : Ssa.func =
+    let new_blocks =
+      IntMap.map
+        (fun bb ->
+          match bb.Ssa.bb_term with
+          | Ssa.Br (id, cond, tgt_truthy, tgt_falsy) ->
+              if is_const_truthy cond then { bb with bb_term = Ssa.Jump (id, tgt_truthy) }
+              else if is_const_falsy cond then { bb with bb_term = Ssa.Jump (id, tgt_falsy) }
+              else bb
+          | _ -> bb)
+        f.Ssa.func_blocks
+    in
+    { f with func_blocks = new_blocks }
+
+  let find_reachables (entry : int) (blocks : Ssa.basic_block IntMap.t) : IntSet.t =
+    let rec dfs visited worklist =
+      match worklist with
+      | [] -> visited
+      | bb_id :: rest -> (
+          if IntSet.mem bb_id visited then dfs visited rest
+          else
+            let visited = IntSet.add bb_id visited in
+            match IntMap.find_opt bb_id blocks with
+            | None -> dfs visited rest
+            | Some bb ->
+                let succs =
+                  match bb.Ssa.bb_term with
+                  | Ssa.Jump (_, target) -> [ target ]
+                  | Ssa.Br (_, _, true_target, false_target) -> [ true_target; false_target ]
+                  | Ssa.Return _ -> []
+                in
+                dfs visited (succs @ rest))
+    in
+    dfs IntSet.empty [ entry ]
+
+  let remove_unreachable_blocks (f : Ssa.func) : Ssa.func =
+    let reachable = find_reachables f.Ssa.func_entry_block f.Ssa.func_blocks in
+    let new_blocks = IntMap.filter (fun bb_id _ -> IntSet.mem bb_id reachable) f.func_blocks in
+    (* Clean up Phis by removing incomings from unreachable blocks *)
+    let new_blocks =
+      IntMap.map
+        (fun bb ->
+          let bb_phis =
+            List.map
+              (fun phi ->
+                let phi_incoming =
+                  IntMap.filter (fun pred_id _ -> IntSet.mem pred_id reachable) phi.Ssa.phi_incoming
+                in
+                { phi with Ssa.phi_incoming })
+              bb.Ssa.bb_phis
+          in
+          { bb with Ssa.bb_phis })
+        new_blocks
+    in
+    { f with func_blocks = new_blocks }
+
   let dce_func (f : Ssa.func) : Ssa.func =
-    (* 1. Collect defs *)
+    (* 1. Branch elision *)
+    let f = elide_branches f in
+    let f = remove_unreachable_blocks f in
+    (* 2. Collect defs *)
     let defs =
       let map = List.to_seq f.func_params |> Seq.map (fun p -> (p, DefParam)) |> ValueMap.of_seq in
       IntMap.fold
@@ -393,7 +464,7 @@ module Dead_code_elim = struct
             map bb.bb_code)
         f.func_blocks map
     in
-    (* 2. Find critical instrs (Store, Call, terminators) and initial live values *)
+    (* 3. Find critical instrs (Store, Call, terminators) and initial live values *)
     let worklist, live =
       IntMap.fold
         (fun _ bb (wl, live) ->
@@ -413,7 +484,7 @@ module Dead_code_elim = struct
           (uses @ wl, List.fold_right ValueSet.add uses live))
         f.func_blocks ([], ValueSet.empty)
     in
-    (* 3. Collect liveness *)
+    (* 4. Collect liveness *)
     let rec propagate wl live =
       match wl with
       | [] -> live
@@ -432,7 +503,7 @@ module Dead_code_elim = struct
               propagate (uses @ rest) live)
     in
     let liveness = propagate worklist live in
-    (* 4. Sweep *)
+    (* 5. Sweep *)
     let new_blocks =
       IntMap.map
         (fun bb ->
@@ -455,6 +526,7 @@ module Dead_code_elim = struct
 
   let dead_code_elim (p : Ssa.program) : Ssa.program =
     { p with functions = List.map dce_func p.functions }
+    |> Ssa.reset_loop_props |> Ssa.recompute_loop_props
 end
 
 let opt_pipe (initial : string * Ssa.program)
