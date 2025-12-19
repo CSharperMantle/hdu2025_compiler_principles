@@ -218,6 +218,9 @@ module Const_prop = struct
     in
     match vals with
     | [] -> map
+    | [ single_val ] ->
+        (* %dest <- Phi [%src] can always be elided *)
+        single_val |> map_or_default (fun c -> ValueMap.add phi.phi_dest c map) map
     | hd :: tl ->
         if List.for_all (fun v -> v = hd) tl then
           hd |> map_or_default (fun c -> ValueMap.add phi.phi_dest c map) map
@@ -266,16 +269,40 @@ module Const_prop = struct
     let rewrite_operand = rewrite_operand map in
     generic_rewrite_uses_of_terminator rewrite_operand term
 
+  let rewrite_phi (map : const_val ValueMap.t) (phi : Ssa.phi) : Ssa.phi option * bool =
+    if IntMap.cardinal phi.Ssa.phi_incoming = 1 then (None, true)
+    else
+      let incomings =
+        IntMap.bindings phi.Ssa.phi_incoming |> List.map (fun (_, v) -> get_const (Value v) map)
+      in
+      match incomings with
+      | [] -> (Some phi, false)
+      | hd :: tl ->
+          if List.for_all (fun c -> c = hd) tl && Option.is_some hd then
+            (* All incomings are actually the same constant! *)
+            (None, true)
+          else (Some phi, false)
+
   let simple_const_prop_func (f : Ssa.func) : Ssa.func =
     let rec aux f_curr =
       let map = collect_constants f_curr in
       let blocks', changed =
         IntMap.fold
           (fun bb_id bb (blocks, changed_acc) ->
+            let phis, phi_changed =
+              List.fold_left
+                (fun (phis, any_changed) phi ->
+                  let phi_opt, changed = rewrite_phi map phi in
+                  match phi_opt with
+                  | Some p -> (p :: phis, any_changed || changed)
+                  | None -> (phis, true))
+                ([], false) bb.Ssa.bb_phis
+            in
+            let phis = List.rev phis in
             let code, code_changes = List.split (List.map (rewrite_instr map) bb.Ssa.bb_code) in
             let term, term_changed = rewrite_terminator map bb.Ssa.bb_term in
-            let bb_changed = List.exists Fun.id code_changes || term_changed in
-            let new_bb = { bb with Ssa.bb_code = code; Ssa.bb_term = term } in
+            let bb_changed = phi_changed || List.exists Fun.id code_changes || term_changed in
+            let new_bb = { bb with Ssa.bb_phis = phis; Ssa.bb_code = code; Ssa.bb_term = term } in
             (IntMap.add bb_id new_bb blocks, changed_acc || bb_changed))
           f_curr.Ssa.func_blocks (IntMap.empty, false)
       in
@@ -291,6 +318,18 @@ module Copy_prop = struct
   let collect_copies (f : Ssa.func) : Ssa.operand ValueMap.t =
     IntMap.fold
       (fun _ bb map ->
+        (* Phis *)
+        let map =
+          List.fold_left
+            (fun acc phi ->
+              if IntMap.cardinal phi.Ssa.phi_incoming = 1 then
+                (* %dest <- Phi [%src] is effectively a Move *)
+                let incoming_val = snd (List.hd (IntMap.bindings phi.Ssa.phi_incoming)) in
+                ValueMap.add phi.Ssa.phi_dest (Ssa.Value incoming_val) acc
+              else acc)
+            map bb.Ssa.bb_phis
+        in
+        (* Moves *)
         List.fold_left
           (fun acc instr ->
             match instr with
