@@ -120,6 +120,8 @@ let generic_rewrite_uses_of_phi (rewrite : Ssa.value -> Ssa.value * bool) (phi :
   in
   ({ phi with phi_incoming = incoming' }, changed)
 
+type opt_pass = Ssa.program -> Ssa.program * bool
+
 module Const_prop = struct
   type const_val =
     | CInt of int
@@ -283,7 +285,7 @@ module Const_prop = struct
             (None, true)
           else (Some phi, false)
 
-  let simple_const_prop_func (f : Ssa.func) : Ssa.func =
+  let simple_const_prop_func (f : Ssa.func) : Ssa.func * bool =
     let rec aux f_curr =
       let map = collect_constants f_curr in
       let blocks', changed =
@@ -306,12 +308,15 @@ module Const_prop = struct
             (IntMap.add bb_id new_bb blocks, changed_acc || bb_changed))
           f_curr.Ssa.func_blocks (IntMap.empty, false)
       in
-      if changed then aux { f_curr with func_blocks = blocks' } else f_curr
+      if changed then aux { f_curr with func_blocks = blocks' } else (f_curr, false)
     in
     aux f
 
-  let simple_const_prop (p : Ssa.program) : Ssa.program =
-    { p with functions = List.map simple_const_prop_func p.functions }
+  let simple_const_prop (p : Ssa.program) : Ssa.program * bool =
+    let funcs_and_changes = List.map simple_const_prop_func p.functions in
+    let funcs = List.map fst funcs_and_changes in
+    let changed = List.exists snd funcs_and_changes in
+    ({ p with functions = funcs }, changed)
 end
 
 module Copy_prop = struct
@@ -379,10 +384,10 @@ module Copy_prop = struct
     let prop = propagate_in_operand map in
     generic_rewrite_uses_of_terminator prop term
 
-  let copy_prop_func (f : Ssa.func) : Ssa.func =
+  let copy_prop_func (f : Ssa.func) : Ssa.func * bool =
     let rec aux f_curr =
       let map = collect_copies f_curr in
-      if ValueMap.is_empty map then f_curr
+      if ValueMap.is_empty map then (f_curr, false)
       else
         let blocks', changed =
           IntMap.fold
@@ -399,12 +404,15 @@ module Copy_prop = struct
               (IntMap.add bb_id new_bb blocks, changed_acc || bb_changed))
             f_curr.Ssa.func_blocks (IntMap.empty, false)
         in
-        if changed then aux { f_curr with func_blocks = blocks' } else f_curr
+        if changed then aux { f_curr with func_blocks = blocks' } else (f_curr, false)
     in
     aux f
 
-  let copy_prop (p : Ssa.program) : Ssa.program =
-    { p with functions = List.map copy_prop_func p.functions }
+  let copy_prop (p : Ssa.program) : Ssa.program * bool =
+    let funcs_and_changes = List.map copy_prop_func p.functions in
+    let funcs = List.map fst funcs_and_changes in
+    let changed = List.exists snd funcs_and_changes in
+    ({ p with functions = funcs }, changed)
 end
 
 module Dead_code_elim = struct
@@ -481,13 +489,18 @@ module Dead_code_elim = struct
     in
     { f with func_blocks = new_blocks }
 
-  let dce_func (f : Ssa.func) : Ssa.func =
+  let dce_func (f : Ssa.func) : Ssa.func * bool =
     (* 1. Branch elision *)
-    let f = elide_branches f in
-    let f = remove_unreachable_blocks f in
+    let f_after_branches = elide_branches f in
+    let f_after_unreachable = remove_unreachable_blocks f_after_branches in
+    let changed_1 = f_after_unreachable <> f in
     (* 2. Collect defs *)
     let defs =
-      let map = List.to_seq f.func_params |> Seq.map (fun p -> (p, DefParam)) |> ValueMap.of_seq in
+      let map =
+        List.to_seq f_after_unreachable.func_params
+        |> Seq.map (fun p -> (p, DefParam))
+        |> ValueMap.of_seq
+      in
       IntMap.fold
         (fun _ bb map ->
           let map =
@@ -501,7 +514,7 @@ module Dead_code_elim = struct
               | Some d -> ValueMap.add d (DefInstr instr) acc
               | None -> acc)
             map bb.bb_code)
-        f.func_blocks map
+        f_after_unreachable.func_blocks map
     in
     (* 3. Find critical instrs (Store, Call, terminators) and initial live values *)
     let worklist, live =
@@ -521,7 +534,7 @@ module Dead_code_elim = struct
           let uses = uses_of_terminator bb.Ssa.bb_term in
           let uses = List.filter (fun u -> not (ValueSet.mem u live)) uses in
           (uses @ wl, List.fold_right ValueSet.add uses live))
-        f.func_blocks ([], ValueSet.empty)
+        f_after_unreachable.func_blocks ([], ValueSet.empty)
     in
     (* 4. Collect liveness *)
     let rec propagate wl live =
@@ -543,9 +556,9 @@ module Dead_code_elim = struct
     in
     let liveness = propagate worklist live in
     (* 5. Sweep *)
-    let new_blocks =
-      IntMap.map
-        (fun bb ->
+    let new_blocks, changed_2 =
+      IntMap.fold
+        (fun bb_id bb (blocks, changed_acc) ->
           let bb_phis =
             List.filter (fun phi -> ValueSet.mem phi.Ssa.phi_dest liveness) bb.Ssa.bb_phis
           in
@@ -558,34 +571,72 @@ module Dead_code_elim = struct
                 | _, None -> false)
               bb.bb_code
           in
-          { bb with bb_phis; bb_code })
-        f.func_blocks
+          let bb_changed =
+            List.length bb.Ssa.bb_phis <> List.length bb_phis
+            || List.length bb.bb_code <> List.length bb_code
+          in
+          let new_bb = { bb with bb_phis; bb_code } in
+          (IntMap.add bb_id new_bb blocks, changed_acc || bb_changed))
+        f_after_unreachable.func_blocks (IntMap.empty, false)
     in
-    { f with func_blocks = new_blocks }
+    ({ f_after_unreachable with func_blocks = new_blocks }, changed_1 || changed_2)
 
-  let dead_code_elim (p : Ssa.program) : Ssa.program =
-    { p with functions = List.map dce_func p.functions }
-    |> Ssa.reset_loop_props |> Ssa.recompute_loop_props
+  let dead_code_elim (p : Ssa.program) : Ssa.program * bool =
+    let funcs_and_changes = List.map dce_func p.functions in
+    let funcs = List.map fst funcs_and_changes in
+    let changed = List.exists snd funcs_and_changes in
+    let p' = { p with functions = funcs } in
+    let p'' = if changed then Ssa.reset_loop_props p' |> Ssa.recompute_loop_props else p' in
+    (p'', changed)
 end
 
-let opt_pipe (initial : string * Ssa.program)
-    (passes : (string * (Ssa.program -> Ssa.program)) list) : (string * Ssa.program) list =
-  let progs =
-    List.fold_left
-      (fun (prog, acc) pass ->
-        let prog' = (snd pass) prog in
-        (prog', (fst pass, prog') :: acc))
-      (snd initial, [])
-      passes
-  in
-  initial :: List.rev (snd progs)
+type opt_pipe_stage = string * opt_pass
 
-let default_opt_passes : (string * (Ssa.program -> Ssa.program)) list =
+type opt_pipe_component =
+  | Once of opt_pipe_stage
+  | Fixedpoint of opt_pipe_stage list
+
+let opt_pipe (initial : string * Ssa.program) (components : opt_pipe_component list) :
+    (string * Ssa.program) list =
+  let run_component prog component =
+    match component with
+    | Once (name, pass) ->
+        let prog, _ = pass prog in
+        [ (name, prog) ]
+    | Fixedpoint stages ->
+        let rec iterate prog iteration =
+          let results', any_changed =
+            List.fold_left
+              (fun (results, changed_acc) (name, pass) ->
+                let prog = if results = [] then prog else snd (List.hd results) in
+                let prog, changed = pass prog
+                and full_name = Printf.sprintf "%s %d" name (iteration + 1) in
+                ((full_name, prog) :: results, changed_acc || changed))
+              ([], false) stages
+          in
+          let results = List.rev results' in
+          if any_changed then results @ iterate (snd (List.hd results')) (iteration + 1)
+          else results
+        in
+        iterate prog 0
+  in
+  let _, results =
+    List.fold_left
+      (fun (prog, acc) component ->
+        let new_results = run_component prog component in
+        let last_prog = snd (List.hd (List.rev new_results)) in
+        (last_prog, acc @ new_results))
+      (snd initial, [])
+      components
+  in
+  initial :: results
+
+let default_opt_passes : opt_pipe_component list =
   [
-    ("Simple Const Prop 1", Const_prop.simple_const_prop);
-    ("Copy Prop 1", Copy_prop.copy_prop);
-    ("Dead Code Elim 1", Dead_code_elim.dead_code_elim);
-    ("Simple Const Prop 2", Const_prop.simple_const_prop);
-    ("Copy Prop 2", Copy_prop.copy_prop);
-    ("Dead Code Elim 2", Dead_code_elim.dead_code_elim);
+    Fixedpoint
+      [
+        ("Simple Const Prop", Const_prop.simple_const_prop);
+        ("Copy Prop", Copy_prop.copy_prop);
+        ("Dead Code Elim", Dead_code_elim.dead_code_elim);
+      ];
   ]
