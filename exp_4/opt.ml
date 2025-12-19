@@ -115,7 +115,7 @@ let generic_rewrite_uses_of_phi (rewrite : Ssa.value -> Ssa.value * bool) (phi :
     IntMap.fold
       (fun bb_id v (acc, changed) ->
         let v', v_changed = rewrite v in
-        if v_changed then (IntMap.add bb_id v' acc, true) else (IntMap.add bb_id v acc, changed))
+        (IntMap.add bb_id v' acc, changed || v_changed))
       phi.Ssa.phi_incoming (IntMap.empty, false)
   in
   ({ phi with phi_incoming = incoming' }, changed)
@@ -373,9 +373,7 @@ module Dead_code_elim = struct
   let dce_func (f : Ssa.func) : Ssa.func =
     (* 1. Collect defs *)
     let defs =
-      let map =
-        List.fold_left (fun acc p -> ValueMap.add p DefParam acc) ValueMap.empty f.func_params
-      in
+      let map = List.to_seq f.func_params |> Seq.map (fun p -> (p, DefParam)) |> ValueMap.of_seq in
       IntMap.fold
         (fun _ bb map ->
           let map =
