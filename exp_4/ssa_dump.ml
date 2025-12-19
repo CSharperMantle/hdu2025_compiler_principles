@@ -335,10 +335,10 @@ let finalize_block (bb_id : int) (prog : Ssa.program) (ctx : dump_context) :
   let preds = IntMap.find_opt bb_id ctx.preds_map |> or_default [] |> List.sort compare
   and succs = IntMap.find_opt bb_id ctx.succs_map |> or_default [] |> List.sort compare in
 
-  let loop_depth = IntMap.find_opt bb_id prog.loop_depths |> or_default 0 in
+  let loop_depth = IntMap.find_opt bb_id prog.loop_props.loop_depths |> or_default 0 in
   let attributes =
-    (if IntSet.mem bb_id prog.loop_headers then [ "loopheader" ] else [])
-    @ if IntSet.mem bb_id prog.back_edges then [ "backedge" ] else []
+    (if IntSet.mem bb_id prog.loop_props.loop_headers then [ "loopheader" ] else [])
+    @ if IntSet.mem bb_id prog.loop_props.back_edges then [ "backedge" ] else []
   in
 
   let mir_bb : mir_block =
@@ -432,7 +432,7 @@ let dump_func (pass_name : string) (prog : Ssa.program) (func : Ssa.func) (ctx :
         let instrs =
           List.map
             (fun (instr : mir_instruction) ->
-              let uses = IntMap.find_opt instr.id ctx.uses_map |> Option.value ~default:[] in
+              let uses = IntMap.find_opt instr.id ctx.uses_map |> or_default [] in
               { instr with uses })
             bb.instructions
         in

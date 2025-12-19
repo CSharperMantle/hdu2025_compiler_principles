@@ -62,17 +62,21 @@ type proto_block = {
   term : Tac.tac_instr option;
 }
 
-type program = {
-  globals : int list;
-  global_init : Tac.tac_init Common.IntMap.t;
-  functions : func list;
-  objects : Tac.tac_obj_type Common.IntMap.t;
-  next_instr_id : int;
-  next_bb_id : int;
+type program_loop_props = {
   loop_headers : IntSet.t;
   back_edges : IntSet.t;
   back_edge_list : (int * int) list;
   loop_depths : int IntMap.t;
+}
+
+type program = {
+  globals : int list;
+  global_init : Tac.tac_init IntMap.t;
+  functions : func list;
+  objects : Tac.tac_obj_type IntMap.t;
+  next_instr_id : int;
+  next_bb_id : int;
+  loop_props : program_loop_props;
 }
 
 val prettify_program : program -> string
@@ -80,5 +84,7 @@ val prettify_program : program -> string
 type build_ssa_context
 
 val empty_build_ssa_context : build_ssa_context
+val reset_loop_props : program -> program
+val recompute_loop_props : program -> program
 val build_cfg : Tac.tac_program -> build_ssa_context -> program * build_ssa_context
 val build_ssa : Tac.tac_program -> build_ssa_context -> program

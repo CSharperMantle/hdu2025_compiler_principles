@@ -195,6 +195,13 @@ type proto_block = {
   term : Tac.tac_instr option;
 }
 
+type program_loop_props = {
+  loop_headers : IntSet.t;
+  back_edges : IntSet.t;
+  back_edge_list : (int * int) list;
+  loop_depths : int IntMap.t;
+}
+
 type program = {
   globals : int list;
   global_init : Tac.tac_init IntMap.t;
@@ -202,10 +209,7 @@ type program = {
   objects : Tac.tac_obj_type IntMap.t;
   next_instr_id : int;
   next_bb_id : int;
-  loop_headers : IntSet.t;
-  back_edges : IntSet.t;
-  back_edge_list : (int * int) list;
-  loop_depths : int IntMap.t;
+  loop_props : program_loop_props;
 }
 
 let prettify_program (p : program) : string =
@@ -407,10 +411,13 @@ let build_cfg (program : Tac.tac_program) (ctx : build_ssa_context) : program * 
       objects = program.objects;
       next_instr_id = ctx.next_instr_id;
       next_bb_id = ctx.next_bb_id;
-      loop_headers = IntSet.empty;
-      back_edges = IntSet.empty;
-      back_edge_list = [];
-      loop_depths = IntMap.empty;
+      loop_props =
+        {
+          loop_headers = IntSet.empty;
+          back_edges = IntSet.empty;
+          back_edge_list = [];
+          loop_depths = IntMap.empty;
+        };
     }
   in
   (program, ctx)
@@ -672,6 +679,80 @@ let compute_loop_props (func : func) (ctx : build_ssa_context) : build_ssa_conte
     loop_depths = IntMap.union (fun _ v_orig _ -> Some v_orig) ctx.loop_depths depths;
   }
 
+let reset_loop_props (program : program) : program =
+  {
+    program with
+    loop_props =
+      {
+        loop_headers = IntSet.empty;
+        back_edges = IntSet.empty;
+        back_edge_list = [];
+        loop_depths = IntMap.empty;
+      };
+  }
+
+let recompute_loop_props (program : program) : program =
+  (* Rebuild context from program's current state *)
+  let ctx =
+    {
+      empty_build_ssa_context with
+      next_bb_id = program.next_bb_id;
+      next_instr_id = program.next_instr_id;
+    }
+  in
+
+  (* Rebuild successors and predecessors from all functions *)
+  let ctx =
+    List.fold_left
+      (fun ctx func ->
+        let succs, preds =
+          IntMap.fold
+            (fun bb_id bb (succs, preds) ->
+              let bb_succs =
+                match bb.bb_term with
+                | Jump (_, target) -> IntSet.singleton target
+                | Br (_, _, true_target, false_target) ->
+                    IntSet.of_list [ true_target; false_target ]
+                | Return _ -> IntSet.empty
+              in
+              let preds =
+                IntSet.fold
+                  (fun succ_id acc ->
+                    let existing = IntMap.find_opt succ_id acc |> or_default IntSet.empty in
+                    IntMap.add succ_id (IntSet.add bb_id existing) acc)
+                  bb_succs preds
+              in
+              (IntMap.add bb_id bb_succs succs, preds))
+            func.func_blocks (IntMap.empty, IntMap.empty)
+        in
+        {
+          ctx with
+          successors = IntMap.fold IntMap.add succs ctx.successors;
+          predecessors = IntMap.fold IntMap.add preds ctx.predecessors;
+        })
+      ctx program.functions
+  in
+
+  (* Recompute dominators and loop properties for each function *)
+  let ctx =
+    List.fold_left
+      (fun ctx func ->
+        let ctx = compute_dom_frontier func ctx in
+        compute_loop_props func ctx)
+      ctx program.functions
+  in
+
+  {
+    program with
+    loop_props =
+      {
+        loop_headers = ctx.loop_headers;
+        back_edges = ctx.back_edges;
+        back_edge_list = ctx.back_edge_list;
+        loop_depths = ctx.loop_depths;
+      };
+  }
+
 (* Algorithm 19.6, "Modern Compiler Implementation in C", Appel. *)
 let insert_phi (func : func) (ctx : build_ssa_context) : func * build_ssa_context =
   let def_sites =
@@ -906,7 +987,7 @@ let rename_value (func : func) (ctx : build_ssa_context) : func * build_ssa_cont
 
 let build_ssa (program : Tac.tac_program) (ctx : build_ssa_context) : program =
   let program, ctx = build_cfg program ctx in
-  let funcs, ctx =
+  let funcs, _ =
     List.fold_left
       (fun (funcs, ctx) func ->
         let ctx = compute_dom_frontier func ctx in
@@ -916,11 +997,6 @@ let build_ssa (program : Tac.tac_program) (ctx : build_ssa_context) : program =
         (func :: funcs, ctx))
       ([], ctx) program.functions
   in
-  {
-    program with
-    functions = List.rev funcs;
-    loop_headers = ctx.loop_headers;
-    back_edges = ctx.back_edges;
-    back_edge_list = ctx.back_edge_list;
-    loop_depths = ctx.loop_depths;
-  }
+  (* Use recompute_loop_props instead of manually setting fields *)
+  let program = { program with functions = List.rev funcs } |> reset_loop_props in
+  recompute_loop_props program
