@@ -579,3 +579,13 @@ let opt_pipe (initial : string * Ssa.program)
       passes
   in
   initial :: List.rev (snd progs)
+
+let default_opt_passes : (string * (Ssa.program -> Ssa.program)) list =
+  [
+    ("Simple Const Prop 1", Const_prop.simple_const_prop);
+    ("Copy Prop 1", Copy_prop.copy_prop);
+    ("Dead Code Elim 1", Dead_code_elim.dead_code_elim);
+    ("Simple Const Prop 2", Const_prop.simple_const_prop);
+    ("Copy Prop 2", Copy_prop.copy_prop);
+    ("Dead Code Elim 2", Dead_code_elim.dead_code_elim);
+  ]

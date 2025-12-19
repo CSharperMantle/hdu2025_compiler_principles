@@ -14,3 +14,5 @@ val opt_pipe :
   string * Ssa.program ->
   (string * (Ssa.program -> Ssa.program)) list ->
   (string * Ssa.program) list
+
+val default_opt_passes : (string * (Ssa.program -> Ssa.program)) list

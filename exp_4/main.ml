@@ -141,14 +141,7 @@ let opt_file (filename : string) : unit =
   with_parsed filename lexbuf @@ fun comp_unit ->
   with_translated filename comp_unit @@ fun (_, program) ->
   let program = Ssa.build_ssa program Ssa.empty_build_ssa_context in
-  let passes =
-    Opt.opt_pipe ("Build SSA", program)
-      [
-        ("Simple Const Prop", Opt.Const_prop.simple_const_prop);
-        ("Copy Prop", Opt.Copy_prop.copy_prop);
-        ("Dead Code Elim", Opt.Dead_code_elim.dead_code_elim);
-      ]
-  in
+  let passes = Opt.opt_pipe ("Build SSA", program) Opt.default_opt_passes in
   Ssa.prettify_program (List.rev passes |> List.hd |> snd) |> print_endline
 
 let opt_iongraph_file (filename : string) : unit =
@@ -156,14 +149,7 @@ let opt_iongraph_file (filename : string) : unit =
   with_parsed filename lexbuf @@ fun comp_unit ->
   with_translated filename comp_unit @@ fun (_, program) ->
   let program = Ssa.build_ssa program Ssa.empty_build_ssa_context in
-  let passes =
-    Opt.opt_pipe ("Build SSA", program)
-      [
-        ("Simple Const Prop", Opt.Const_prop.simple_const_prop);
-        ("Copy Prop", Opt.Copy_prop.copy_prop);
-        ("Dead Code Elim", Opt.Dead_code_elim.dead_code_elim);
-      ]
-  in
+  let passes = Opt.opt_pipe ("Build SSA", program) Opt.default_opt_passes in
   Ssa_dump.dump_ssa passes |> Yojson.Safe.to_string |> print_endline
 
 module StringMap = Map.Make (String)
