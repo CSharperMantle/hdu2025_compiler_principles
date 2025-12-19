@@ -38,7 +38,8 @@ ssa	tests/program_quicksort.sy	success
 ssa	tests/test_ssa_control_1.sy	success		
 ssa	tests/test_ssa_globals_1.sy	success		
 ssa	tests/test_ssa_no_ret.sy	success		
-opt	tests/program_quicksort.sy	success		
-opt	tests/test_ssa_globals_1.sy	success		
-opt	tests/program_synthetic_1.sy	success		
+opt-iongraph	tests/program_quicksort.sy	success		
 opt-iongraph	tests/program_synthetic_1.sy	success		
+opt-iongraph	tests/program_synthetic_2.sy	success		
+opt-iongraph	tests/program_const_1.sy	success		
+opt-iongraph	tests/snippet_gcd.sy	success		

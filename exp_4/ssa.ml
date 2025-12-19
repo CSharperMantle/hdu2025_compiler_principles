@@ -352,6 +352,22 @@ let build_func_cfg (tac_func : Tac.tac_function) (ctx : build_ssa_context) :
         (bb :: rest_bbs, ctx)
   in
   let bbs, ctx = process_blocks pbs ctx in
+  (*
+    Create a sentinel entry block to avoid having the loop header as the entry block.
+    This allows it to insert Phis for argument names, like in tests/snippet_gcd.sy.
+  *)
+  let real_entry_bb = List.hd bbs in
+  let sentinel_entry_id, ctx = alloc_bb_id ctx in
+  let sentinel_jump_id, ctx = alloc_instr_id ctx in
+  let sentinel_entry_bb =
+    {
+      bb_id = sentinel_entry_id;
+      bb_phis = [];
+      bb_code = [];
+      bb_term = Jump (sentinel_jump_id, real_entry_bb.bb_id);
+    }
+  in
+  let bbs = sentinel_entry_bb :: bbs in
   let func_blocks = List.to_seq bbs |> Seq.map (fun bb -> (bb.bb_id, bb)) |> IntMap.of_seq in
 
   (* Calculate successors from terminators *)
@@ -387,7 +403,7 @@ let build_func_cfg (tac_func : Tac.tac_function) (ctx : build_ssa_context) :
       func_id = tac_func.func_id;
       func_name = tac_func.func_name;
       func_params = List.map new_value tac_func.func_params;
-      func_entry_block = (List.hd bbs).bb_id;
+      func_entry_block = sentinel_entry_id;
       func_blocks;
       func_ret_type = tac_func.func_ret_type;
       func_obj_types = tac_func.func_obj_types;

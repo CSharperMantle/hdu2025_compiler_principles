@@ -1,0 +1,241 @@
+const int N = 1000;
+const int M = 100;
+
+// Matrix multiplication with accumulation
+int matA[1000][100];
+int matB[1000][100];
+int matC[100][100];
+
+// Initialize matrices
+void init_matrices() {
+  int i = 0, j = 0;
+  while (i < N) {
+    j = 0;
+    while (j < M) {
+      matA[i][j] = (i * 17 + j * 23) % 100;
+      matB[i][j] = (i * 29 + j * 31) % 100;
+      j = j + 1;
+    }
+    i = i + 1;
+  }
+
+  i = 0;
+  while (i < M) {
+    j = 0;
+    while (j < M) {
+      matC[i][j] = 0;
+      j = j + 1;
+    }
+    i = i + 1;
+  }
+}
+
+// Matrix multiplication: C = A^T * B
+void matrix_multiply() {
+  int i = 0, j = 0, k = 0;
+  int sum = 0;
+
+  while (i < M) {
+    j = 0;
+    while (j < M) {
+      sum = 0;
+      k = 0;
+      while (k < N) {
+        sum = sum + matA[k][i] * matB[k][j];
+        k = k + 1;
+      }
+      matC[i][j] = sum;
+      j = j + 1;
+    }
+    i = i + 1;
+  }
+}
+
+// Compute determinant of 10x10 submatrix (simplified)
+int compute_determinant(int submat[][10]) {
+  // Simplified determinant calculation for stress testing
+  // Using Laplace expansion (not efficient but good for testing)
+  int det = 0;
+  int sign = 1;
+  int i = 0, j = 0, k = 0, l = 0;
+  int minor[10][10];
+
+  if (10 == 1) {
+    return submat[0][0];
+  }
+
+  i = 0;
+  while (i < 10) {
+    // Create minor matrix
+    j = 1;
+    while (j < 10) {
+      k = 0;
+      l = 0;
+      while (k < 10) {
+        if (k != i) {
+          minor[j - 1][l] = submat[j][k];
+          l = l + 1;
+        }
+        k = k + 1;
+      }
+      j = j + 1;
+    }
+
+    det = det + sign * submat[0][i] * compute_determinant(minor);
+    sign = -sign;
+    i = i + 1;
+  }
+
+  return det;
+}
+
+// Sieve of Eratosthenes to find primes
+int primes[1000];
+void sieve_primes() {
+  int is_prime[1001];
+  int i = 0, j = 0;
+
+  // Initialize
+  i = 0;
+  while (i <= 1000) {
+    is_prime[i] = 1;
+    i = i + 1;
+  }
+
+  is_prime[0] = 0;
+  is_prime[1] = 0;
+
+  i = 2;
+  while (i * i <= 1000) {
+    if (is_prime[i] == 1) {
+      j = i * i;
+      while (j <= 1000) {
+        is_prime[j] = 0;
+        j = j + i;
+      }
+    }
+    i = i + 1;
+  }
+
+  // Store primes
+  j = 0;
+  i = 2;
+  while (i <= 1000) {
+    if (is_prime[i] == 1) {
+      primes[j] = i;
+      j = j + 1;
+    }
+    i = i + 1;
+  }
+}
+
+// Fibonacci with memoization
+int fib(int n) {
+  if (n <= 1) {
+    return n;
+  }
+  return fib(n - 1) + fib(n - 2);
+}
+
+// Factorial
+int factorial(int n) {
+  if (n <= 1) {
+    return 1;
+  }
+  return n * factorial(n - 1);
+}
+
+// GCD using Euclidean algorithm
+int gcd(int a, int b) {
+  while (b != 0) {
+    int temp = b;
+    b = a % b;
+    a = temp;
+  }
+  return a;
+}
+
+// Complex numerical computation
+int complex_computation() {
+  int result = 0;
+  int i = 0, j = 0, k = 0;
+
+  // Triple nested loop with various operations
+  i = 0;
+  while (i < 50) {
+    j = 0;
+    while (j < 50) {
+      k = 0;
+      while (k < 50) {
+        result = result + (i * j * k) % 97;
+        result = result - (i + j + k) / 3;
+        result = result * 2;
+        result = result / 3;
+        k = k + 1;
+      }
+      j = j + 1;
+    }
+    i = i + 1;
+  }
+
+  return result;
+}
+
+// Main function
+int main() {
+  int total = 0;
+  int i = 0, j = 0;
+
+  // Initialize and compute
+  init_matrices();
+  matrix_multiply();
+  sieve_primes();
+
+  // Accumulate results from matrix
+  i = 0;
+  while (i < M) {
+    j = 0;
+    while (j < M) {
+      total = total + matC[i][j];
+      j = j + 1;
+    }
+    i = i + 1;
+  }
+
+  // Add prime sum
+  i = 0;
+  while (i < 1000 && primes[i] != 0) {
+    total = total + primes[i];
+    i = i + 1;
+  }
+
+  // Add Fibonacci and factorial results
+  total = total + fib(15);
+  total = total + factorial(10);
+  total = total + gcd(123456, 7890);
+  total = total + complex_computation();
+
+  // Create and compute determinant of a submatrix
+  int submat[10][10];
+  i = 0;
+  while (i < 10) {
+    j = 0;
+    while (j < 10) {
+      submat[i][j] = (i * 7 + j * 11) % 20;
+      j = j + 1;
+    }
+    i = i + 1;
+  }
+
+  total = total + compute_determinant(submat);
+
+  // Final computation with conditional
+  if (total > 0) {
+    total = total * 2;
+  } else {
+    total = -total;
+  }
+
+  // Return final result
+  return total;
+}
