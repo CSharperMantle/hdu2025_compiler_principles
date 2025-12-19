@@ -1,0 +1,4 @@
+[submodule "exp_4/tests/sysy-testsuite"]
+	path = exp_4/tests/sysy-testsuite
+	url = https://github.com/CSharperMantle/jokerwyt-sysy-testsuit-collection.git
+	branch = src-only
