@@ -649,19 +649,6 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
   | Ast.Binary (op, lhs, rhs) -> translate_binary op lhs rhs ctx
   | Ast.Call (name, params) -> translate_call name params ctx
 
-let rec expand_array_init_zeros (dims : int list) : (int list * t_exp) list =
-  match dims with
-  | [] -> [ ([], TIntLit 0) ]
-  | d :: rest ->
-      let sub_zeros = expand_array_init_zeros rest in
-      let rec aux i acc =
-        if i < 0 then acc
-        else
-          let shifted = List.map (fun (idxs, e) -> (i :: idxs, e)) sub_zeros in
-          aux (i - 1) (shifted @ acc)
-      in
-      aux (d - 1) []
-
 let rec eval_const_dim (e : Ast.exp) (ctx : translation_context) :
     (int * t_exp * translation_context, string) agg_result =
   let* t_e, attr, ctx = translate_exp e ctx in
@@ -725,50 +712,60 @@ let rec translate_init (init : Ast.init_val) (ctx : translation_context) :
       let init_val = Option.map (fun v -> Tac.InitList v) init_vals in
       agg_ok (TInitArray t_vals, init_val, ctx)
 
-let rec expand_array_init (dims : int list) (init : t_init_val) (ctx : translation_context) :
-    ((int list * t_exp) list * translation_context, string) agg_result =
-  match (dims, init) with
-  | [], TInitExp e -> agg_ok ([ ([], e) ], ctx)
-  | d :: rest_dims, TInitArray vals ->
-      let rec aux i vals_ptr acc ctx =
-        if i >= d then agg_ok (List.rev acc, ctx)
-        else
-          let* sub_inits, ctx =
-            match vals_ptr with
-            | [] -> agg_ok (expand_array_init_zeros rest_dims, ctx)
-            | v :: _ -> expand_array_init rest_dims v ctx
-          in
-          let shifted = List.map (fun (idxs, e) -> (i :: idxs, e)) sub_inits in
-          let next_vals = tl_or [] vals_ptr in
-          aux (i + 1) next_vals (List.rev_append shifted acc) ctx
-      in
-      if List.length vals > d then agg_error "Too many initializers" ([], ctx)
-      else aux 0 vals [] ctx
-  | [], TInitArray _ -> agg_error "Initializer is an array but scalar expected" ([], ctx)
-  | _ :: _, TInitExp _ -> agg_error "Initializer is a scalar but array expected" ([], ctx)
+(* Helper to flatten an initializer into a sequence of scalar exprs *)
+let rec flatten_init (init : t_init_val) : t_exp list =
+  match init with
+  | TInitExp e -> [ e ]
+  | TInitArray vals -> List.concat_map flatten_init vals
 
-let rec expand_const_array_init (dims : int list) (init : t_const_init_val)
-    (ctx : translation_context) : ((int list * t_exp) list * translation_context, string) agg_result
-    =
-  match (dims, init) with
-  | [], TConstExp e -> agg_ok ([ ([], e) ], ctx)
-  | d :: rest_dims, TConstArray vals ->
-      let rec aux i vals_ptr acc ctx =
-        if i >= d then agg_ok (List.rev acc, ctx)
-        else
-          let* sub_inits, ctx =
-            match vals_ptr with
-            | [] -> agg_ok (expand_array_init_zeros rest_dims, ctx)
-            | v :: _ -> expand_const_array_init rest_dims v ctx
-          in
-          let shifted = List.map (fun (idxs, e) -> (i :: idxs, e)) sub_inits in
-          let next_vals = tl_or [] vals_ptr in
-          aux (i + 1) next_vals (List.rev_append shifted acc) ctx
-      in
-      if List.length vals > d then agg_error "Too many initializers" ([], ctx)
-      else aux 0 vals [] ctx
-  | [], TConstArray _ -> agg_error "Initializer is an array but scalar expected" ([], ctx)
-  | _ :: _, TConstExp _ -> agg_error "Initializer is a scalar but array expected" ([], ctx)
+(* Helper to flatten an const initializer into a sequence of const scalar exprs *)
+let rec flatten_const_init (init : t_const_init_val) : t_exp list =
+  match init with
+  | TConstExp e -> [ e ]
+  | TConstArray vals -> List.concat_map flatten_const_init vals
+
+(* Generate indices for a multi-dimensional array in row-major order *)
+let rec gen_array_indices (dims : int list) : int list list =
+  match dims with
+  | [] -> [ [] ]
+  | d :: rest ->
+      let sub_indices = gen_array_indices rest in
+      List.concat_map
+        (fun i -> List.map (fun suffix -> i :: suffix) sub_indices)
+        (List.init d Fun.id)
+
+let expand_array_init (dims : int list) (init : t_init_val) (ctx : translation_context) :
+    ((int list * t_exp) list * translation_context, string) agg_result =
+  let flat = flatten_init init
+  and all_indices = gen_array_indices dims
+  and size = List.fold_left ( * ) 1 dims in
+  if List.length flat > size then agg_error "Too many initializers" ([], ctx)
+  else
+    let rec pair_with_indices exprs indices acc =
+      match (exprs, indices) with
+      | [], [] -> List.rev acc
+      | [], idx :: rest -> pair_with_indices [] rest ((idx, TIntLit 0) :: acc)
+      | e :: e_rest, idx :: i_rest -> pair_with_indices e_rest i_rest ((idx, e) :: acc)
+      | _, [] -> List.rev acc
+    in
+    agg_ok (pair_with_indices flat all_indices [], ctx)
+
+let expand_const_array_init (dims : int list) (init : t_const_init_val) (ctx : translation_context)
+    : ((int list * t_exp) list * translation_context, string) agg_result =
+  let flat = flatten_const_init init
+  and all_indices = gen_array_indices dims
+  and size = List.fold_left ( * ) 1 dims in
+
+  if List.length flat > size then agg_error "Too many initializers" ([], ctx)
+  else
+    let rec pair_with_indices exprs indices acc =
+      match (exprs, indices) with
+      | [], [] -> List.rev acc
+      | [], idx :: rest -> pair_with_indices [] rest ((idx, TIntLit 0) :: acc)
+      | e :: e_rest, idx :: i_rest -> pair_with_indices e_rest i_rest ((idx, e) :: acc)
+      | _, [] -> List.rev acc
+    in
+    agg_ok (pair_with_indices flat all_indices [], ctx)
 
 let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
     (t_comp_unit * Tac.tac_program, string list) result =
