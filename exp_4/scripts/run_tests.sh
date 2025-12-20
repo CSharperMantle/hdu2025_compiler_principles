@@ -8,6 +8,7 @@ fi
 spec_file="$1"
 total=0
 n_passed=0
+failed_cmds=""
 
 EXEC="${EXEC:=dune exec -- exp_4}"
 
@@ -80,6 +81,8 @@ while IFS="$(printf '\t')" read -r mode input_file expected_status expected_msg 
         printf "${RED}[FAIL]${RESET_COLOR} %s - %s\n" "$mode" "$input_file"
         echo "  Reason: $reason"
         print_case_output "$output"
+        failed_cmds=$(printf '%s\t%s\nx' "${failed_cmds}" "${cmd}")
+        failed_cmds=${failed_cmds%x}
     fi
 done < "$spec_file"
 
@@ -89,5 +92,10 @@ echo "Summary: $n_passed / $total tests passed"
 if [ $n_passed -eq $total ]; then
     exit 0
 else
+    if [ -n "$failed_cmds" ]; then
+        echo ""
+        echo "FAILURES:"
+        echo "$failed_cmds"
+    fi
     exit 1
 fi
