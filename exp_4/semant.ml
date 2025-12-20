@@ -346,18 +346,67 @@ and gen_exp (exp : t_exp) (ctx : translation_context) : Tac.operand * sem_type *
             else Tac.UnaryOp (temp, op, opnd)
       in
       (Tac.Object temp, res_ty, ctx |> emit instr)
+  | TBinary (Ast.And, e1, e2, res_ty) ->
+      (* Short-circuit `&&`: if e1 then (e2 != 0) else 0 *)
+      let opnd1, ty1, ctx = gen_exp e1 ctx in
+      let l_eval_e2, ctx = alloc_label_id ctx in
+      let l_end, ctx = alloc_label_id ctx in
+      let temp, ctx = alloc_temp_obj res_ty ctx in
+      let ctx =
+        ctx
+        |> emit (Tac.Move (temp, Tac.Const 0))
+        |> emit (Tac.Br (opnd1, l_eval_e2))
+        |> emit (Tac.Jump l_end) |> emit (Tac.Label l_eval_e2)
+      in
+      let opnd2, ty2, ctx = gen_exp e2 ctx in
+      let target_ty = common_type_of ty1.elem_ty ty2.elem_ty in
+      let opnd2, ctx = coerce_type opnd2 target_ty ty2.elem_ty ctx in
+      let ctx =
+        ctx
+        |> emit
+             (if target_ty = FloatType then Tac.FBinOp (temp, Ast.Neq, opnd2, Tac.Const 0)
+              else Tac.BinOp (temp, Ast.Neq, opnd2, Tac.Const 0))
+        |> emit (Tac.Label l_end)
+      in
+      (Tac.Object temp, res_ty, ctx)
+  | TBinary (Ast.Or, e1, e2, res_ty) ->
+      (* Short-circuit `||`: if e1 then 1 else (e2 != 0) *)
+      let opnd1, ty1, ctx = gen_exp e1 ctx in
+      let l_eval_e2, ctx = alloc_label_id ctx in
+      let l_end, ctx = alloc_label_id ctx in
+      let temp, ctx = alloc_temp_obj res_ty ctx in
+      let ctx =
+        ctx
+        |> emit (Tac.Move (temp, Tac.Const 1))
+        |> emit (Tac.Br (opnd1, l_end))
+        |> emit (Tac.Label l_eval_e2)
+      in
+      let opnd2, ty2, ctx = gen_exp e2 ctx in
+      let target_ty = common_type_of ty1.elem_ty ty2.elem_ty in
+      let opnd2, ctx = coerce_type opnd2 target_ty ty2.elem_ty ctx in
+      let ctx =
+        ctx
+        |> emit
+             (if target_ty = FloatType then Tac.FBinOp (temp, Ast.Neq, opnd2, Tac.Const 0)
+              else Tac.BinOp (temp, Ast.Neq, opnd2, Tac.Const 0))
+        |> emit (Tac.Label l_end)
+      in
+      (Tac.Object temp, res_ty, ctx)
   | TBinary (op, e1, e2, res_ty) ->
+      (* Non-short-circuit operators *)
       let opnd1, ty1, ctx = gen_exp e1 ctx in
       let opnd2, ty2, ctx = gen_exp e2 ctx in
       let target_ty = common_type_of ty1.elem_ty ty2.elem_ty in
       let opnd1, ctx = coerce_type opnd1 target_ty ty1.elem_ty ctx in
       let opnd2, ctx = coerce_type opnd2 target_ty ty2.elem_ty ctx in
       let temp, ctx = alloc_temp_obj res_ty ctx in
-      let instr =
-        if target_ty = FloatType then Tac.FBinOp (temp, op, opnd1, opnd2)
-        else Tac.BinOp (temp, op, opnd1, opnd2)
+      let ctx =
+        ctx
+        |> emit
+             (if target_ty = FloatType then Tac.FBinOp (temp, op, opnd1, opnd2)
+              else Tac.BinOp (temp, op, opnd1, opnd2))
       in
-      (Tac.Object temp, res_ty, ctx |> emit instr)
+      (Tac.Object temp, res_ty, ctx)
   | TCall (func_id, name, params, ret_ty) ->
       let args =
         match StringMap.find_opt name ctx.names with
