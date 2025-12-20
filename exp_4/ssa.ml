@@ -368,7 +368,6 @@ let build_func_cfg (tac_func : Tac.tac_function) (ctx : build_ssa_context) :
     }
   in
   let bbs = sentinel_entry_bb :: bbs in
-  let func_blocks = List.to_seq bbs |> Seq.map (fun bb -> (bb.bb_id, bb)) |> IntMap.of_seq in
 
   (* Calculate successors from terminators *)
   let successors =
@@ -383,8 +382,35 @@ let build_func_cfg (tac_func : Tac.tac_function) (ctx : build_ssa_context) :
         IntMap.add bb.bb_id succs acc)
       IntMap.empty bbs
   in
-
-  (* Calculate predecessors by inverting successors *)
+  (* Prune unreachable blocks *)
+  let rec collect_reachable start visited =
+    if IntSet.mem start visited then visited
+    else
+      let visited = IntSet.add start visited in
+      let succs = IntMap.find_opt start successors |> or_default IntSet.empty in
+      IntSet.fold collect_reachable succs visited
+  in
+  let reachables = collect_reachable sentinel_entry_id IntSet.empty in
+  let bbs = List.filter (fun bb -> IntSet.mem bb.bb_id reachables) bbs in
+  let func_blocks = List.to_seq bbs |> Seq.map (fun bb -> (bb.bb_id, bb)) |> IntMap.of_seq in
+  (* Recalculate successors and predecessors with only reachable blocks *)
+  let successors =
+    List.fold_left
+      (fun acc bb ->
+        let succs =
+          match bb.bb_term with
+          | Jump (_, tgt) ->
+              if IntSet.mem tgt reachables then IntSet.singleton tgt else IntSet.empty
+          | Br (_, _, tgt_truthy, tgt_falsy) ->
+              let s = IntSet.empty in
+              let s = if IntSet.mem tgt_truthy reachables then IntSet.add tgt_truthy s else s in
+              let s = if IntSet.mem tgt_falsy reachables then IntSet.add tgt_falsy s else s in
+              s
+          | Return _ -> IntSet.empty
+        in
+        IntMap.add bb.bb_id succs acc)
+      IntMap.empty bbs
+  in
   let predecessors =
     IntMap.fold
       (fun bb_id succs acc ->
@@ -395,6 +421,7 @@ let build_func_cfg (tac_func : Tac.tac_function) (ctx : build_ssa_context) :
           succs acc)
       successors IntMap.empty
   in
+
   let successors = IntMap.fold IntMap.add successors ctx.successors
   and predecessors = IntMap.fold IntMap.add predecessors ctx.predecessors in
   let ctx = { ctx with successors; predecessors }
