@@ -59,3 +59,7 @@ let string_of_list (f : 'a -> string) (l : 'a list) : string =
 
 let string_of_int_list (l : int list) : string = string_of_list string_of_int l
 let maybe_add_newline (s : string) : string = if s <> "" then s ^ "\n" else ""
+
+let rec list3_snd = function
+  | [] -> []
+  | (_, y, _) :: l -> y :: list3_snd l

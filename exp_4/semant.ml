@@ -180,13 +180,13 @@ let is_mem_loc (id : int) (ctx : translation_context) : bool =
   | LocalScalar _ | LocalArray _ -> false
   | _ -> true
 
-let alloc_func (name : string) (args : sem_type list) (ret : b_type) (ctx : translation_context) :
-    int * translation_context =
+let alloc_func (name : string) (arg_tys : sem_type list) (ret : b_type) (ctx : translation_context)
+    : int * translation_context =
   let id, ctx = alloc_func_id ctx in
   ( id,
     {
       ctx with
-      names = StringMap.add name (FuncEntry { id; args; ret }) ctx.names;
+      names = StringMap.add name (FuncEntry { id; args = arg_tys; ret }) ctx.names;
       current_ret_ty = ret;
     } )
 
@@ -1000,9 +1000,9 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
             let* rest_items, ctx = translate_comp_unit_item_list rest ctx in
             agg_ok (t_item :: rest_items, ctx)
         | Ast.FuncDefItem f ->
-            let rec process_params params acc_arg_tys acc_t_params ctx =
+            let rec process_params params acc ctx =
               match params with
-              | [] -> agg_ok (List.rev acc_arg_tys, List.rev acc_t_params, ctx)
+              | [] -> agg_ok (List.rev acc, ctx)
               | p :: p_rest ->
                   let ty = b_type_from_ast p.Ast.param_type in
                   let* dims_vals, dims_exprs, ctx =
@@ -1013,21 +1013,29 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
                         agg_ok (0 :: d_vals, Some d_exprs, ctx)
                   in
                   let arg_ty = { elem_ty = ty; dims = dims_vals } in
-                  let id, ctx = alloc_named_obj p.param_name arg_ty Param None ctx in
+                  process_params p_rest ((p.param_name, arg_ty, dims_exprs) :: acc) ctx
+            in
+            let rec alloc_params params acc ctx =
+              match params with
+              | [] -> (List.rev acc, ctx)
+              | (name, arg_ty, dim) :: p_rest ->
+                  let id, ctx = alloc_named_obj name arg_ty Param None ctx in
                   let t_param =
                     {
                       t_param_id = id;
-                      t_param_type = ty;
-                      t_param_name = p.param_name;
-                      t_param_dims = dims_exprs;
+                      t_param_type = arg_ty.elem_ty;
+                      t_param_name = name;
+                      t_param_dims = dim;
                     }
                   in
-                  process_params p_rest (arg_ty :: acc_arg_tys) (t_param :: acc_t_params) ctx
+                  alloc_params p_rest (t_param :: acc) ctx
             in
             let ret_ty = b_type_from_ast_func f.Ast.func_ret_type in
             let ctx_body = exit_global ctx in
-            let* arg_tys, t_params, ctx_body = process_params f.Ast.func_params [] [] ctx_body in
-            let func_id, ctx_body = alloc_func f.Ast.func_name arg_tys ret_ty ctx_body in
+            let* params, ctx_body = process_params f.Ast.func_params [] ctx_body in
+            let param_tys = list3_snd params in
+            let func_id, ctx_body = alloc_func f.Ast.func_name param_tys ret_ty ctx_body in
+            let t_params, ctx_body = alloc_params params [] ctx_body in
             let* t_body, ctx_body = translate_block_items f.Ast.func_body ret_ty false ctx_body in
             let ctx_body = gen_stmt (TBlock t_body) ctx_body in
             let ctx_body =
@@ -1036,7 +1044,7 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
                 gen_stmt (TBlock [ TStmt (TReturn None) ]) ctx_body
               else ctx_body
             in
-            let ctx = merge_func_context func_id f t_params arg_tys ret_ty ctx_body ctx in
+            let ctx = merge_func_context func_id f t_params param_tys ret_ty ctx_body ctx in
             let* rest_items, ctx = translate_comp_unit_item_list rest ctx in
             let t_func =
               {
