@@ -35,10 +35,12 @@ let prettify_tac_obj_type (ty : tac_obj_type) : string =
 
 type tac_init =
   | InitInt of int
+  | InitFloat of float
   | InitList of tac_init list
 
 let rec prettify_tac_init = function
   | InitInt v -> string_of_int v
+  | InitFloat v -> string_of_float v
   | InitList vs ->
       let content = List.map prettify_tac_init vs |> String.concat ", " in
       Printf.sprintf "{%s}" content

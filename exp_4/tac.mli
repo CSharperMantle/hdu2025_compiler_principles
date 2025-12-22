@@ -29,6 +29,7 @@ val prettify_tac_obj_type : tac_obj_type -> string
 
 type tac_init =
   | InitInt of int
+  | InitFloat of float
   | InitList of tac_init list
 
 val prettify_tac_init : tac_init -> string

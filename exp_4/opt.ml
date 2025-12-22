@@ -123,79 +123,37 @@ let generic_rewrite_uses_of_phi (rewrite : Ssa.value -> Ssa.value * bool) (phi :
 type opt_pass = Ssa.program -> Ssa.program * bool
 
 module Const_prop = struct
-  type const_val =
-    | CInt of int
-    | CFloat of float
+  open Sem_ast
 
   let operand_of = function
     | CInt i -> Ssa.Const i
     | CFloat f -> Ssa.ConstFloat f
 
-  let get_const (op : Ssa.operand) (map : const_val ValueMap.t) : const_val option =
+  let get_const (op : Ssa.operand) (map : const ValueMap.t) : const option =
     match op with
     | Const i -> Some (CInt i)
     | ConstFloat f -> Some (CFloat f)
     | Value v -> ValueMap.find_opt v map
 
-  let eval_bin_op (op : Ast.bin_op) (v1 : const_val) (v2 : const_val) : const_val option =
-    match (v1, v2, op) with
-    | CInt i1, CInt i2, Ast.Add -> Some (CInt (i1 + i2))
-    | CInt i1, CInt i2, Ast.Sub -> Some (CInt (i1 - i2))
-    | CInt i1, CInt i2, Ast.Mul -> Some (CInt (i1 * i2))
-    | CInt i1, CInt i2, Ast.Div -> if i2 <> 0 then Some (CInt (i1 / i2)) else None
-    | CInt i1, CInt i2, Ast.Mod -> if i2 <> 0 then Some (CInt (i1 mod i2)) else None
-    | CInt i1, CInt i2, Ast.Lt -> Some (CInt (Bool.to_int (i1 < i2)))
-    | CInt i1, CInt i2, Ast.Leq -> Some (CInt (Bool.to_int (i1 <= i2)))
-    | CInt i1, CInt i2, Ast.Gt -> Some (CInt (Bool.to_int (i1 > i2)))
-    | CInt i1, CInt i2, Ast.Geq -> Some (CInt (Bool.to_int (i1 >= i2)))
-    | CInt i1, CInt i2, Ast.Eq -> Some (CInt (Bool.to_int (i1 = i2)))
-    | CInt i1, CInt i2, Ast.Neq -> Some (CInt (Bool.to_int (i1 <> i2)))
-    | CInt i1, CInt i2, Ast.And -> Some (CInt (Bool.to_int (i1 <> 0 && i2 <> 0)))
-    | CInt i1, CInt i2, Ast.Or -> Some (CInt (Bool.to_int (i1 <> 0 || i2 <> 0)))
-    | CFloat f1, CFloat f2, Ast.Add -> Some (CFloat (f1 +. f2))
-    | CFloat f1, CFloat f2, Ast.Sub -> Some (CFloat (f1 -. f2))
-    | CFloat f1, CFloat f2, Ast.Mul -> Some (CFloat (f1 *. f2))
-    | CFloat f1, CFloat f2, Ast.Div -> Some (CFloat (f1 /. f2))
-    | CFloat f1, CFloat f2, Ast.Lt -> Some (CInt (Bool.to_int (f1 < f2)))
-    | CFloat f1, CFloat f2, Ast.Leq -> Some (CInt (Bool.to_int (f1 <= f2)))
-    | CFloat f1, CFloat f2, Ast.Gt -> Some (CInt (Bool.to_int (f1 > f2)))
-    | CFloat f1, CFloat f2, Ast.Geq -> Some (CInt (Bool.to_int (f1 >= f2)))
-    | CFloat f1, CFloat f2, Ast.Eq -> Some (CInt (Bool.to_int (f1 = f2)))
-    | CFloat f1, CFloat f2, Ast.Neq -> Some (CInt (Bool.to_int (f1 <> f2)))
-    | _ -> None
-
-  let eval_unary_op (op : Ast.unary_op) (v : const_val) : const_val option =
-    match (v, op) with
-    | v, Ast.Pos -> Some v
-    | CInt i, Ast.Neg -> Some (CInt (-i))
-    | CInt i, Ast.Not -> Some (CInt (Bool.to_int (i = 0)))
-    | CFloat f, Ast.Neg -> Some (CFloat (-.f))
-    | _ -> None
-
-  let collect_const_from_instr (map : const_val ValueMap.t) (instr : Ssa.instr) :
-      const_val ValueMap.t =
+  let collect_const_from_instr (map : const ValueMap.t) (instr : Ssa.instr) : const ValueMap.t =
     match instr with
     | Ssa.Move (_, d, s) -> get_const s map |> map_or_default (fun c -> ValueMap.add d c map) map
     | Ssa.BinOp (_, d, op, s1, s2) -> (
         match (get_const s1 map, get_const s2 map) with
         | Some c1, Some c2 ->
-            eval_bin_op op c1 c2 |> map_or_default (fun res -> ValueMap.add d res map) map
+            Semant.eval_binary_op c1 c2 op |> map_or_default (fun res -> ValueMap.add d res map) map
         | _ -> map)
     | Ssa.FBinOp (_, d, op, s1, s2) -> (
         match (get_const s1 map, get_const s2 map) with
         | Some c1, Some c2 ->
-            eval_bin_op op c1 c2 |> map_or_default (fun res -> ValueMap.add d res map) map
+            Semant.eval_binary_op c1 c2 op |> map_or_default (fun res -> ValueMap.add d res map) map
         | _ -> map)
     | Ssa.UnaryOp (_, d, op, s) ->
         get_const s map
-        |> map_or_default
-             (fun c -> eval_unary_op op c |> map_or_default (fun res -> ValueMap.add d res map) map)
-             map
+        |> map_or_default (fun c -> ValueMap.add d (Semant.eval_unary_op c op) map) map
     | Ssa.FUnaryOp (_, d, op, s) ->
         get_const s map
-        |> map_or_default
-             (fun c -> eval_unary_op op c |> map_or_default (fun res -> ValueMap.add d res map) map)
-             map
+        |> map_or_default (fun c -> ValueMap.add d (Semant.eval_unary_op c op) map) map
     | Ssa.Itf (_, d, s) ->
         get_const s map
         |> map_or_default
@@ -214,7 +172,7 @@ module Const_prop = struct
              map
     | _ -> map
 
-  let collect_const_from_phi (map : const_val ValueMap.t) (phi : Ssa.phi) : const_val ValueMap.t =
+  let collect_const_from_phi (map : const ValueMap.t) (phi : Ssa.phi) : const ValueMap.t =
     let vals =
       IntMap.bindings phi.Ssa.phi_incoming |> List.map (fun (_, v) -> get_const (Value v) map)
     in
@@ -228,14 +186,14 @@ module Const_prop = struct
           hd |> map_or_default (fun c -> ValueMap.add phi.phi_dest c map) map
         else map
 
-  let collect_constants (f : Ssa.func) : const_val ValueMap.t =
+  let collect_constants (f : Ssa.func) : const ValueMap.t =
     IntMap.fold
       (fun _ bb map ->
         let map = List.fold_left collect_const_from_phi map bb.Ssa.bb_phis in
         List.fold_left collect_const_from_instr map bb.Ssa.bb_code)
       f.Ssa.func_blocks ValueMap.empty
 
-  let rewrite_operand (map : const_val ValueMap.t) (op : Ssa.operand) : Ssa.operand * bool =
+  let rewrite_operand (map : const ValueMap.t) (op : Ssa.operand) : Ssa.operand * bool =
     get_const op map
     |> map_or_default
          (fun c ->
@@ -244,7 +202,7 @@ module Const_prop = struct
            | CFloat f -> (Ssa.ConstFloat f, op <> ConstFloat f))
          (op, false)
 
-  let rewrite_instr (map : const_val ValueMap.t) (instr : Ssa.instr) : Ssa.instr * bool =
+  let rewrite_instr (map : const ValueMap.t) (instr : Ssa.instr) : Ssa.instr * bool =
     let rewrite_operand = rewrite_operand map in
     let instr, changed1 = generic_rewrite_uses_of_instr rewrite_operand instr in
     def_value_of_opt instr
@@ -266,12 +224,11 @@ module Const_prop = struct
                 (instr, changed1))
          (instr, changed1)
 
-  let rewrite_terminator (map : const_val ValueMap.t) (term : Ssa.terminator) :
-      Ssa.terminator * bool =
+  let rewrite_terminator (map : const ValueMap.t) (term : Ssa.terminator) : Ssa.terminator * bool =
     let rewrite_operand = rewrite_operand map in
     generic_rewrite_uses_of_terminator rewrite_operand term
 
-  let rewrite_phi (map : const_val ValueMap.t) (phi : Ssa.phi) : Ssa.phi option * bool =
+  let rewrite_phi (map : const ValueMap.t) (phi : Ssa.phi) : Ssa.phi option * bool =
     if IntMap.cardinal phi.Ssa.phi_incoming = 1 then (None, true)
     else
       let incomings =

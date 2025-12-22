@@ -14,6 +14,7 @@ let string_of_token = function
   | RETURN -> "RETURN"
   | ID _ -> "ID"
   | INT_LIT _ -> "INT_LIT"
+  | FLOAT_LIT _ -> "FLOAT_LIT"
   | PLUS -> "PLUS"
   | MINUS -> "MINUS"
   | MULT -> "MULT"
@@ -43,7 +44,8 @@ let prettify_token (token : token) =
   let token_name = string_of_token token in
   match token with
   | ID id -> Format.sprintf "%s %s" token_name id
-  | INT_LIT n -> Format.sprintf "%s %d" token_name n
+  | INT_LIT v -> Format.sprintf "%s %d" token_name v
+  | FLOAT_LIT v -> Format.sprintf "%s %f" token_name v
   | _ -> token_name
 
 let keywords =

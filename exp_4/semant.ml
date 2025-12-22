@@ -15,7 +15,7 @@ type name_entry =
   | VarEntry of {
       id : int;
       ty : sem_type;
-      const_val : int option;
+      const_val : const option;
     }
   | FuncEntry of {
       id : int;
@@ -141,7 +141,7 @@ let alloc_func_id (ctx : translation_context) : int * translation_context =
 let alloc_label_id (ctx : translation_context) : int * translation_context =
   (ctx.next_label_id, { ctx with next_label_id = ctx.next_label_id + 1 })
 
-let alloc_named_obj (name : string) (ty : sem_type) (kind : obj_kind) (const_val : int option)
+let alloc_named_obj (name : string) (ty : sem_type) (kind : obj_kind) (const_val : const option)
     (ctx : translation_context) : int * translation_context =
   let _ =
     match (ctx.is_global_scope, kind) with
@@ -263,25 +263,43 @@ let find_obj_type (id : int) (ctx : translation_context) : sem_type =
   | Some ty -> ty
   | None -> internal_error (Printf.sprintf "Object %d not found in type table" id)
 
-let eval_unary_op (v : int) = function
-  | Ast.Pos -> v
-  | Ast.Neg -> -v
-  | Ast.Not -> Bool.to_int (v = 0)
+let eval_booly = function
+  | CInt v -> v <> 0
+  | CFloat v -> v <> 0.0
 
-let eval_binary_op (lv : int) (rv : int) = function
-  | Ast.Add -> Some (lv + rv)
-  | Ast.Sub -> Some (lv - rv)
-  | Ast.Mul -> Some (lv * rv)
-  | Ast.Div when rv <> 0 -> Some (lv / rv)
-  | Ast.Mod when rv <> 0 -> Some (lv mod rv)
-  | Ast.Lt -> Some (Bool.to_int (lv < rv))
-  | Ast.Gt -> Some (Bool.to_int (lv > rv))
-  | Ast.Leq -> Some (Bool.to_int (lv <= rv))
-  | Ast.Geq -> Some (Bool.to_int (lv >= rv))
-  | Ast.Eq -> Some (Bool.to_int (lv = rv))
-  | Ast.Neq -> Some (Bool.to_int (lv <> rv))
-  | Ast.And -> Some (Bool.to_int (lv <> 0 && rv <> 0))
-  | Ast.Or -> Some (Bool.to_int (lv <> 0 || rv <> 0))
+let eval_unary_op (v : const) = function
+  | Ast.Pos -> v
+  | Ast.Neg -> (
+      match v with
+      | CInt v -> CInt (-v)
+      | CFloat v -> CFloat (-.v))
+  | Ast.Not -> CInt (Bool.to_int (not (eval_booly v)))
+
+let eval_binary_op (v1 : const) (v2 : const) (op : Ast.bin_op) : const option =
+  match (v1, v2, op) with
+  | CInt i1, CInt i2, Ast.Add -> Some (CInt (i1 + i2))
+  | CInt i1, CInt i2, Ast.Sub -> Some (CInt (i1 - i2))
+  | CInt i1, CInt i2, Ast.Mul -> Some (CInt (i1 * i2))
+  | CInt i1, CInt i2, Ast.Div -> if i2 <> 0 then Some (CInt (i1 / i2)) else None
+  | CInt i1, CInt i2, Ast.Mod -> if i2 <> 0 then Some (CInt (i1 mod i2)) else None
+  | CInt i1, CInt i2, Ast.Lt -> Some (CInt (Bool.to_int (i1 < i2)))
+  | CInt i1, CInt i2, Ast.Leq -> Some (CInt (Bool.to_int (i1 <= i2)))
+  | CInt i1, CInt i2, Ast.Gt -> Some (CInt (Bool.to_int (i1 > i2)))
+  | CInt i1, CInt i2, Ast.Geq -> Some (CInt (Bool.to_int (i1 >= i2)))
+  | CInt i1, CInt i2, Ast.Eq -> Some (CInt (Bool.to_int (i1 = i2)))
+  | CInt i1, CInt i2, Ast.Neq -> Some (CInt (Bool.to_int (i1 <> i2)))
+  | CInt i1, CInt i2, Ast.And -> Some (CInt (Bool.to_int (i1 <> 0 && i2 <> 0)))
+  | CInt i1, CInt i2, Ast.Or -> Some (CInt (Bool.to_int (i1 <> 0 || i2 <> 0)))
+  | CFloat f1, CFloat f2, Ast.Add -> Some (CFloat (f1 +. f2))
+  | CFloat f1, CFloat f2, Ast.Sub -> Some (CFloat (f1 -. f2))
+  | CFloat f1, CFloat f2, Ast.Mul -> Some (CFloat (f1 *. f2))
+  | CFloat f1, CFloat f2, Ast.Div -> Some (CFloat (f1 /. f2))
+  | CFloat f1, CFloat f2, Ast.Lt -> Some (CInt (Bool.to_int (f1 < f2)))
+  | CFloat f1, CFloat f2, Ast.Leq -> Some (CInt (Bool.to_int (f1 <= f2)))
+  | CFloat f1, CFloat f2, Ast.Gt -> Some (CInt (Bool.to_int (f1 > f2)))
+  | CFloat f1, CFloat f2, Ast.Geq -> Some (CInt (Bool.to_int (f1 >= f2)))
+  | CFloat f1, CFloat f2, Ast.Eq -> Some (CInt (Bool.to_int (f1 = f2)))
+  | CFloat f1, CFloat f2, Ast.Neq -> Some (CInt (Bool.to_int (f1 <> f2)))
   | _ -> None
 
 (*
@@ -320,7 +338,8 @@ let rec gen_opnd_index (indices : t_exp list) (dims : int list) (ctx : translati
 and gen_exp (exp : t_exp) (ctx : translation_context) : Tac.operand * sem_type * translation_context
     =
   match exp with
-  | TIntLit n -> (Tac.Const n, int_type, ctx)
+  | TIntLit v -> (Tac.Const v, int_type, ctx)
+  | TFloatLit v -> (Tac.ConstFloat v, float_type, ctx)
   | TVar (id, _, [], ty) ->
       if is_mem_loc id ctx then
         let temp, ctx = alloc_temp_obj ty ctx in
@@ -577,6 +596,7 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
   and translate_unary op sub ctx =
     let* sub_expr, sub_attr, ctx = translate_exp sub ctx in
     match op with
+    (* TODO: Merge these two cases? *)
     | Ast.Pos | Ast.Neg ->
         let exp_val =
           match (op, sub_attr.const_val) with
@@ -592,7 +612,7 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
           agg_error "Unary operator applied to `void`" (result_expr, result_attr, ctx)
         else agg_ok (result_expr, result_attr, ctx)
     | Ast.Not ->
-        let exp_val = Option.map (fun v -> if v = 0 then 1 else 0) sub_attr.const_val in
+        let exp_val = Option.map (fun v -> eval_unary_op v Ast.Not) sub_attr.const_val in
         let result_expr = TUnary (op, sub_expr, int_type)
         and result_attr = { ty = int_type; const_val = exp_val } in
 
@@ -643,7 +663,10 @@ let rec translate_exp (exp : Ast.exp) (ctx : translation_context) :
   match exp with
   | Ast.IntLit v ->
       let t_node = TIntLit v in
-      agg_ok (t_node, { ty = int_type; const_val = Some v }, ctx)
+      agg_ok (t_node, { ty = int_type; const_val = Some (CInt v) }, ctx)
+  | Ast.FloatLit v ->
+      let t_node = TFloatLit v in
+      agg_ok (t_node, { ty = float_type; const_val = Some (CFloat v) }, ctx)
   | Ast.Var (name, indices) -> translate_var name indices ctx
   | Ast.Unary (op, sub) -> translate_unary op sub ctx
   | Ast.Binary (op, lhs, rhs) -> translate_binary op lhs rhs ctx
@@ -654,8 +677,9 @@ let rec eval_const_dim (e : Ast.exp) (ctx : translation_context) :
   let* t_e, attr, ctx = translate_exp e ctx in
 
   match attr.const_val with
-  | Some v when v > 0 -> agg_ok (v, t_e, ctx)
-  | Some v -> agg_error (Printf.sprintf "Array dimension `%d` is invalid" v) (1, t_e, ctx)
+  | Some (CInt v) when v > 0 -> agg_ok (v, t_e, ctx)
+  | Some (CInt v) -> agg_error (Printf.sprintf "Array dimension `%d` is invalid" v) (1, t_e, ctx)
+  | Some (CFloat v) -> agg_error (Printf.sprintf "Array dimension `%f` is invalid" v) (1, t_e, ctx)
   | None -> agg_error "Array dimension must be a constant integer" (1, t_e, ctx)
 
 and eval_dims (dims : Ast.exp list) (acc_vals : int list) (acc_exprs : t_exp list)
@@ -669,12 +693,14 @@ and eval_dims (dims : Ast.exp list) (acc_vals : int list) (acc_exprs : t_exp lis
 let rec translate_const_init (init : Ast.const_init_val) (ctx : translation_context) :
     (t_const_init_val * Tac.tac_init * translation_context, string) agg_result =
   match init with
-  | Ast.ConstExp e ->
+  | Ast.ConstExp e -> (
       let* t_e, attr, ctx = translate_exp e ctx in
 
-      if attr.const_val = None then
-        agg_error "Constant initializer must be constant" (TConstExp t_e, Tac.InitInt 0, ctx)
-      else agg_ok (TConstExp t_e, Tac.InitInt (Option.get attr.const_val), ctx)
+      match attr.const_val with
+      | Some (CInt v) -> agg_ok (TConstExp t_e, Tac.InitInt v, ctx)
+      | Some (CFloat v) -> agg_ok (TConstExp t_e, Tac.InitFloat v, ctx)
+      | None -> agg_error "Constant initializer must be constant" (TConstExp t_e, Tac.InitInt 0, ctx)
+      )
   | Ast.ConstArray vals ->
       let rec visit_vals vs ctx =
         match vs with
@@ -690,10 +716,12 @@ let rec translate_const_init (init : Ast.const_init_val) (ctx : translation_cont
 let rec translate_init (init : Ast.init_val) (ctx : translation_context) :
     (t_init_val * Tac.tac_init option * translation_context, string) agg_result =
   match init with
-  | Ast.InitExp e ->
+  | Ast.InitExp e -> (
       let* t_e, attr, ctx = translate_exp e ctx in
-      let init_val = Option.map (fun v -> Tac.InitInt v) attr.const_val in
-      agg_ok (TInitExp t_e, init_val, ctx)
+      match attr.const_val with
+      | Some (CInt v) -> agg_ok (TInitExp t_e, Some (Tac.InitInt v), ctx)
+      | Some (CFloat v) -> agg_ok (TInitExp t_e, Some (Tac.InitFloat v), ctx)
+      | None -> agg_ok (TInitExp t_e, None, ctx))
   | Ast.InitArray vals ->
       let rec visit_vals vs ctx =
         match vs with
@@ -778,7 +806,8 @@ let translate (comp_unit : Ast.comp_unit) (ctx : translation_context) :
         let kind = if ctx.is_global_scope then Global else Local in
         let const_val =
           match (ty, dims_vals, init_val) with
-          | IntType, [], Tac.InitInt v -> Some v
+          | IntType, [], Tac.InitInt v -> Some (CInt v)
+          | FloatType, [], Tac.InitFloat v -> Some (CFloat v)
           | _ -> None
         in
         let id, ctx =

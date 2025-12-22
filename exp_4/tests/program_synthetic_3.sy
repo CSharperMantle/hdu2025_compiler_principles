@@ -1,0 +1,84 @@
+// Test program for floating point constants, int constants, operations and implicit conversion
+
+void putint(int n) {}
+void putch(int n) {}
+void putfloat(float f) {}
+
+int getint() { return 0; }
+float getfloat() { return 0.0; }
+
+int main() {
+    // Integer constants
+    int int_a = 10;
+    int int_b = -5;
+    int int_c = 0;
+    
+    // Floating point constants
+    float float_a = 3.14;
+    float float_b = -2.5;
+    float float_c = 0.0;
+    
+    // Integer operations
+    int int_sum = int_a + int_b;
+    int int_diff = int_a - int_b;
+    int int_prod = int_a * int_b;
+    int int_div = int_a / int_b;
+    int int_mod = int_a % int_b;
+    
+    // Floating point operations
+    float float_sum = float_a + float_b;
+    float float_diff = float_a - float_b;
+    float float_prod = float_a * float_b;
+    float float_div = float_a / float_b;
+    
+    // Implicit conversion tests
+    int implicit_int = float_a;  // float to int
+    float implicit_float = int_a;  // int to float
+    
+    // Mixed operations (should trigger implicit conversion)
+    float mixed_sum = int_a + float_b;
+    float mixed_prod = int_a * float_b;
+    int mixed_int = int_a + float_b;  // result converted back to int
+    
+    // Output results
+    putint(int_a);
+    putch(10);
+    putint(int_b);
+    putch(10);
+    putint(int_sum);
+    putch(10);
+    putint(int_diff);
+    putch(10);
+    putint(int_prod);
+    putch(10);
+    putint(int_div);
+    putch(10);
+    putint(int_mod);
+    putch(10);
+    
+    putfloat(float_a);
+    putch(10);
+    putfloat(float_b);
+    putch(10);
+    putfloat(float_sum);
+    putch(10);
+    putfloat(float_diff);
+    putch(10);
+    putfloat(float_prod);
+    putch(10);
+    putfloat(float_div);
+    putch(10);
+    
+    putint(implicit_int);
+    putch(10);
+    putfloat(implicit_float);
+    putch(10);
+    putfloat(mixed_sum);
+    putch(10);
+    putfloat(mixed_prod);
+    putch(10);
+    putint(mixed_int);
+    putch(10);
+    
+    return 0;
+}

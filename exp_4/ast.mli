@@ -32,6 +32,7 @@ val string_of_bin_op : bin_op -> string
 
 type exp =
   | IntLit of int
+  | FloatLit of float
   | Var of string * exp list (* (id, array indices) *)
   | Unary of unary_op * exp
   | Binary of bin_op * exp * exp

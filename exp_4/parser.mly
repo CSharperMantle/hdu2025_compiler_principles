@@ -14,6 +14,7 @@ open Ast
 %token RETURN       "return"
 %token <string> ID
 %token <int> INT_LIT
+%token <float> FLOAT_LIT
 %token PLUS         "+"
 %token MINUS        "-"
 %token MULT         "*"
@@ -164,8 +165,10 @@ stmt:
   ;
 
 exp:
-  | n = INT_LIT
-    { IntLit n }
+  | v = INT_LIT
+    { IntLit v }
+  | v = FLOAT_LIT
+    { FloatLit v }
   | lv = lval
     { let (name, indices) = lv in Var (name, indices) }
   | "("; e = exp; ")"

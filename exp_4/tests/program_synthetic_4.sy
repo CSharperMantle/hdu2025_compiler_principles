@@ -1,0 +1,154 @@
+// Scientific calculation test with mixed-type operations to stress the optimizer
+
+void putint(int n) {}
+void putch(int n) {}
+void putfloat(float f) {}
+
+int getint() { return 0; }
+float getfloat() { return 0.0; }
+
+// Global variables for optimization challenges
+int global_counter = 0;
+float global_result = 0.0;
+
+// Function to calculate factorial (recursive)
+int factorial(int n) {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+// Function to calculate power (iterative)
+float power(float base, int exp) {
+    float result = 1.0;
+    int i = 0;
+    while (i < exp) {
+        result = result * base;
+        i = i + 1;
+    }
+    return result;
+}
+
+// Function to calculate sine using Taylor series (simplified)
+float sine(float x) {
+    float result = x;
+    float term = x;
+    int i = 1;
+    
+    while (i < 6) {  // Limited iterations for SysY simplicity
+        term = -term * x * x / ((2 * i) * (2 * i + 1));
+        result = result + term;
+        i = i + 1;
+    }
+    
+    return result;
+}
+
+// Function to calculate exponential using Taylor series
+float exponential(float x) {
+    float result = 1.0;
+    float term = 1.0;
+    int i = 1;
+    
+    while (i < 10) {  // Limited iterations
+        term = term * x / i;
+        result = result + term;
+        i = i + 1;
+    }
+    
+    return result;
+}
+
+int main() {
+    // Constants for scientific calculations
+    float pi = 3.14159;
+    float e = 2.71828;
+    int iterations = 5;
+    
+    // Array for storing intermediate results
+    float results[10];
+    int i = 0;
+    
+    // Initialize array
+    while (i < 10) {
+        results[i] = 0.0;
+        i = i + 1;
+    }
+    
+    // Test 1: Mixed-type calculations with factorial and power
+    i = 0;
+    while (i < iterations) {
+        int fact = factorial(i + 1);
+        float pow_val = power(2.0, i);
+        results[i] = fact / pow_val;  // Implicit conversion
+        i = i + 1;
+    }
+    
+    // Test 2: Trigonometric calculations
+    float angle = pi / 4.0;  // 45 degrees
+    float sin_val = sine(angle);
+    float sin_squared = sin_val * sin_val;
+    float cos_squared = 1.0 - sin_squared;  // Using identity sin² + cos² = 1
+    
+    // Test 3: Exponential and logarithmic-like calculations
+    float exp_val = exponential(1.0);  // Should be close to e
+    float log_approx = 0.0;
+    int j = 1;
+    while (j < 10) {
+        log_approx = log_approx + (1.0 / j) * power(-1.0, j + 1);  // Alternating harmonic series
+        j = j + 1;
+    }
+    
+    // Test 4: Complex mixed calculations
+    float complex_calc = 0.0;
+    i = 0;
+    while (i < 5) {
+        int temp_int = i * 2 + 1;
+        float temp_float = temp_int * pi / 10.0;
+        complex_calc = complex_calc + sine(temp_float) * power(e, -0.1 * i);
+        i = i + 1;
+    }
+    
+    // Test 5: Stress optimizer with redundant calculations
+    float redundant1 = (pi + e) * (pi - e);
+    float redundant2 = (pi * pi) - (e * e);
+    float redundant3 = redundant1 - redundant2;  // Should be close to 0
+    
+    // Test 6: Global variable manipulation
+    global_counter = 10;
+    while (global_counter > 0) {
+        global_result = global_result + power(1.1, global_counter);
+        global_counter = global_counter - 1;
+    }
+    
+    // Output results
+    i = 0;
+    while (i < iterations) {
+        putfloat(results[i]);
+        putch(10);
+        i = i + 1;
+    }
+    
+    putfloat(sin_val);
+    putch(10);
+    putfloat(sin_squared);
+    putch(10);
+    putfloat(cos_squared);
+    putch(10);
+    
+    putfloat(exp_val);
+    putch(10);
+    putfloat(log_approx);
+    putch(10);
+    
+    putfloat(complex_calc);
+    putch(10);
+    putfloat(redundant3);
+    putch(10);
+    
+    putfloat(global_result);
+    putch(10);
+    
+    return 0;
+}

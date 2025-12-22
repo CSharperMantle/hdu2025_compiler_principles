@@ -71,6 +71,7 @@ let string_of_bin_op = function
 
 type exp =
   | IntLit of int
+  | FloatLit of float
   | Var of string * exp list
   | Unary of unary_op * exp
   | Binary of bin_op * exp * exp
@@ -140,7 +141,8 @@ let prettify_b_type (node : b_type) : string =
 
 let rec prettify_exp (node : exp) : string list =
   match node with
-  | IntLit n -> [ Printf.sprintf "IntLit val=%d" n ]
+  | IntLit v -> [ Printf.sprintf "IntLit v=%d" v ]
+  | FloatLit v -> [ Printf.sprintf "FLoatLit v=%f" v ]
   | Var (name, indices) ->
       let indices_lines = List.map prettify_exp indices |> List.flatten in
       "LVal" :: indent (prettify_id_name name :: indices_lines)

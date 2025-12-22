@@ -20,6 +20,7 @@ type sem_type = {
 
 type t_exp =
   | TIntLit of int
+  | TFloatLit of float
   | TVar of int * string * t_exp list * sem_type
   | TUnary of Ast.unary_op * t_exp * sem_type
   | TBinary of Ast.bin_op * t_exp * t_exp * sem_type
@@ -87,9 +88,13 @@ type t_comp_unit_item =
 
 type t_comp_unit = t_comp_unit_item list
 
+type const =
+  | CInt of int
+  | CFloat of float
+
 type exp_attr = {
   ty : sem_type;
-  const_val : int option;
+  const_val : const option;
 }
 
 let prettify_id_name ((id, name) : int * string) : string = Printf.sprintf "Id %d (%s)" id name
@@ -113,7 +118,8 @@ let prettify_sem_type (ty : sem_type) : string =
 
 let rec prettify_t_exp (node : t_exp) : string list =
   match node with
-  | TIntLit n -> [ Printf.sprintf "TIntLit val=%d" n ]
+  | TIntLit v -> [ Printf.sprintf "TIntLit v=%d" v ]
+  | TFloatLit v -> [ Printf.sprintf "TFloatLit v=%f" v ]
   | TVar (id, name, indices, ty) ->
       let indices_lines = List.map prettify_t_exp indices |> List.flatten in
       Printf.sprintf "TLVal %s" (prettify_sem_type ty)

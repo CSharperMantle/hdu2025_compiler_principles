@@ -1,5 +1,8 @@
 open Sem_ast
 
+val eval_unary_op : const -> Ast.unary_op -> const
+val eval_binary_op : const -> const -> Ast.bin_op -> const option
+
 type translation_context
 
 val empty_translation_context : translation_context

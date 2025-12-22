@@ -4,6 +4,8 @@ lex	tests/task_4_2_sample_3.sy	success
 lex	tests/test_lexer_bad_int_lit_1.sy	failure	Error type Lexer.Lexing_error	1
 lex	tests/test_lexer_bad_int_lit_2.sy	failure	Error type Lexer.Lexing_error	1
 lex	tests/test_lexer_bad_int_lit_3.sy	failure	Error type Lexer.Lexing_error	1
+lex	tests/test_lexer_bad_float_lit_1.sy	failure	Error type Lexer.Lexing_error	1
+lex	tests/test_lexer_bad_float_lit_2.sy	failure	Error type Lexer.Lexing_error	1
 parse	tests/test_parser_array_1.sy	success		
 parse	tests/test_parser_array_2.sy	success		
 parse	tests/task_4_3_sample_2_single_err_1.sy	failure	Error type parsing_error	1
@@ -41,6 +43,7 @@ ssa	tests/test_ssa_no_ret.sy	success
 opt-iongraph	tests/program_quicksort.sy	success		
 opt-iongraph	tests/program_synthetic_1.sy	success		
 opt-iongraph	tests/program_synthetic_2.sy	success		
+opt-iongraph	tests/program_synthetic_3.sy	success		
 opt-iongraph	tests/program_const_1.sy	success		
 opt-iongraph	tests/snippet_gcd.sy	success		
 opt-iongraph	tests/sysy-testsuite/000_main.sy	success		

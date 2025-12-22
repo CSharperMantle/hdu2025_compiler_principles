@@ -16,6 +16,7 @@ let letter = ['a'-'z' 'A'-'Z']
 let identifier = ('_' | letter) ('_' | letter | digit)*
 let dec_or_oct = digit+
 let hex = "0x" hex_digit*
+let float_lit = digit* '.' digit*
 
 rule token = parse
   | whitespace+      { token lexbuf }
@@ -26,6 +27,11 @@ rule token = parse
     match StringMap.find_opt id keywords with
       | Some tok -> tok
       | None -> ID id
+  }
+  | float_lit as f {
+    match float_of_string_opt f with
+    | Some v -> FLOAT_LIT v
+    | None -> raise_error (Format.sprintf "Bad float literal: %s" f) lexbuf
   }
   | dec_or_oct as n {
     if String.starts_with ~prefix:"0" n && String.length n > 1 then

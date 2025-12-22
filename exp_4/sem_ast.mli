@@ -15,6 +15,7 @@ type sem_type = {
 (* Typed counterpart of Ast.exp. *)
 type t_exp =
   | TIntLit of int
+  | TFloatLit of float
   | TVar of int * string * t_exp list * sem_type
   | TUnary of Ast.unary_op * t_exp * sem_type
   | TBinary of Ast.bin_op * t_exp * t_exp * sem_type
@@ -93,9 +94,13 @@ type t_comp_unit_item =
 (* Typed counterpart of Ast.comp_unit. *)
 type t_comp_unit = t_comp_unit_item list
 
+type const =
+  | CInt of int
+  | CFloat of float
+
 type exp_attr = {
   ty : sem_type;
-  const_val : int option;
+  const_val : const option;
 }
 
 val prettify_t_comp_unit : t_comp_unit -> string list
