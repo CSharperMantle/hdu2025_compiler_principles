@@ -1,7 +1,7 @@
 open Common
 open Parser
 
-let name_of = function
+let string_of_token = function
   | INT -> "INT"
   | FLOAT -> "FLOAT"
   | VOID -> "VOID"
@@ -39,8 +39,8 @@ let name_of = function
   | RBRACE -> "RBRACE"
   | EOF -> "EOF"
 
-let token_to_string (token : token) =
-  let token_name = name_of token in
+let prettify_token (token : token) =
+  let token_name = string_of_token token in
   match token with
   | ID id -> Format.sprintf "%s %s" token_name id
   | INT_LIT n -> Format.sprintf "%s %d" token_name n

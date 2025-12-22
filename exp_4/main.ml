@@ -90,7 +90,7 @@ let lex_file (filename : string) : unit =
     (fun tok ->
       match tok with
       | Parser.EOF -> ()
-      | _ -> Tokens.token_to_string tok |> print_endline)
+      | _ -> Tokens.prettify_token tok |> print_endline)
     tokens
 
 let parse_file (filename : string) : unit =

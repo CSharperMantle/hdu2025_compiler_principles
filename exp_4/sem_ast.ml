@@ -94,13 +94,13 @@ type exp_attr = {
 
 let prettify_id_name ((id, name) : int * string) : string = Printf.sprintf "Id %d (%s)" id name
 
-let b_type_to_string = function
+let string_of_b_type = function
   | IntType -> "int"
   | FloatType -> "float"
   | VoidType -> "void"
 
 let prettify_b_type (node : b_type) : string =
-  Printf.sprintf "BType type=%s" (b_type_to_string node)
+  Printf.sprintf "BType type=%s" (string_of_b_type node)
 
 let prettify_sem_type (ty : sem_type) : string =
   let dims_str =
@@ -109,7 +109,7 @@ let prettify_sem_type (ty : sem_type) : string =
       let dims = List.map string_of_int ty.dims |> String.concat "," in
       Printf.sprintf "[%s]" dims
   in
-  Printf.sprintf "sem_type=%s%s" (b_type_to_string ty.elem_ty) dims_str
+  Printf.sprintf "sem_type=%s%s" (string_of_b_type ty.elem_ty) dims_str
 
 let rec prettify_t_exp (node : t_exp) : string list =
   match node with

@@ -5,9 +5,9 @@ type b_type =
   | Int
   | Float
 
-let b_type_to_string = function
-  | Int -> "int"
-  | Float -> "float"
+let string_of_b_type = function
+  | Int -> "Int"
+  | Float -> "Float"
 
 type unary_op =
   | Pos
@@ -136,7 +136,7 @@ type comp_unit = comp_unit_item list
 let prettify_id_name (name : string) : string = Printf.sprintf "Id name=%s" name
 
 let prettify_b_type (node : b_type) : string =
-  Printf.sprintf "BType type=%s" (b_type_to_string node)
+  Printf.sprintf "BType type=%s" (string_of_b_type node)
 
 let rec prettify_exp (node : exp) : string list =
   match node with

@@ -2,7 +2,7 @@ type b_type =
   | Int
   | Float
 
-val b_type_to_string : b_type -> string
+val string_of_b_type : b_type -> string
 
 type unary_op =
   | Pos
