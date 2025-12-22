@@ -299,13 +299,13 @@ let transcribe_instr (instr : instr) (func : Ssa.func) (ctx : dump_context) : du
               let indices =
                 List.map (fun id -> get_operand_str id ctx) idx_inps |> String.concat ", "
               in
-              Printf.sprintf "Store %s[%s] = %s" base indices src_str
-          | GlobalScalar i -> Printf.sprintf "Store @%d = %s" i src_str
+              Printf.sprintf "Store %s[%s], %s" base indices src_str
+          | GlobalScalar i -> Printf.sprintf "Store @%d, %s" i src_str
           | GlobalArray i ->
               let indices =
                 List.map (fun id -> get_operand_str id ctx) idx_inps |> String.concat ", "
               in
-              Printf.sprintf "Store @%d[%s] = %s" i indices src_str
+              Printf.sprintf "Store @%d[%s], %s" i indices src_str
         in
         (id, op_str, map_or_default List.singleton [] mem_inp @ idx_inps @ [ src_inp ], "None", ctx)
   in
