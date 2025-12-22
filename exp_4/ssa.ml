@@ -735,7 +735,6 @@ let reset_loop_props (program : program) : program =
   }
 
 let recompute_loop_props (program : program) : program =
-  (* Rebuild context from program's current state *)
   let ctx =
     {
       empty_build_ssa_context with
@@ -743,8 +742,7 @@ let recompute_loop_props (program : program) : program =
       next_instr_id = program.next_instr_id;
     }
   in
-
-  (* Rebuild successors and predecessors from all functions *)
+  (* Rebuild successors and predecessors *)
   let ctx =
     List.fold_left
       (fun ctx func ->
@@ -775,8 +773,6 @@ let recompute_loop_props (program : program) : program =
         })
       ctx program.functions
   in
-
-  (* Recompute dominators and loop properties for each function *)
   let ctx =
     List.fold_left
       (fun ctx func ->
@@ -784,7 +780,6 @@ let recompute_loop_props (program : program) : program =
         compute_loop_props func ctx)
       ctx program.functions
   in
-
   {
     program with
     loop_props =
