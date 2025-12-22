@@ -44,6 +44,7 @@ opt-iongraph	tests/program_quicksort.sy	success
 opt-iongraph	tests/program_synthetic_1.sy	success		
 opt-iongraph	tests/program_synthetic_2.sy	success		
 opt-iongraph	tests/program_synthetic_3.sy	success		
+opt-iongraph	tests/program_synthetic_4.sy	success		
 opt-iongraph	tests/program_const_1.sy	success		
 opt-iongraph	tests/snippet_gcd.sy	success		
 opt-iongraph	tests/sysy-testsuite/000_main.sy	success		
