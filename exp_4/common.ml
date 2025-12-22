@@ -23,6 +23,14 @@ module AggResult = struct
   end
 end
 
+type source_location = {
+  lineno : int;
+  colno : int;
+}
+
+let split_position (pos : Lexing.position) : source_location =
+  { lineno = pos.pos_lnum; colno = pos.pos_cnum - pos.pos_bol + 1 }
+
 let indent_single (line : string) : string = "\t" ^ line
 let indent (lines : string list) : string list = List.map (fun l -> "\t" ^ l) lines
 let indent_seq (lines : string Seq.t) : string Seq.t = Seq.map (fun l -> "\t" ^ l) lines

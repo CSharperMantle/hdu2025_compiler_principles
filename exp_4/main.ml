@@ -1,6 +1,5 @@
 open Exp_4
 open Parser.MenhirInterpreter
-open Util
 open Common
 
 type parsing_error = source_location * string

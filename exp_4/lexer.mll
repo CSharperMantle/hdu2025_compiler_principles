@@ -2,7 +2,6 @@
 open Common
 open Parser
 open Tokens
-open Util
 
 exception Lexing_error of source_location * string
 
